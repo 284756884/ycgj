@@ -1,0 +1,126 @@
+Ozon 约仓工具部署说明
+
+更新时间：2026-06-03
+
+一、部署包内容
+
+部署包应包含以下文件和文件夹：
+
+1. 约仓工具2.5_店铺SKU名称独立版.html
+   主工具页面。
+
+2. proxy
+   本地代理服务目录，包含：
+   - server.js
+   - package.json
+
+3. start-proxy.bat
+   启动本地代理。正常情况下会后台启动并自动关闭窗口。
+
+4. start-proxy-hidden.ps1
+   start-proxy.bat 使用的后台启动脚本。
+
+5. check-proxy.bat
+   检查 http://127.0.0.1:4173/api/health 是否可以连接。
+
+6. stop-proxy.bat / stop-proxy.ps1
+   关闭本地代理。
+
+7. node-v24.16.0-x64.msi
+   Node.js 安装包。新电脑没有 Node.js 时先安装它。
+
+8. 使用说明.txt
+   日常操作说明。
+
+9. 部署说明.txt
+   当前文件。
+
+二、新电脑部署步骤
+
+1. 先解压整个部署包。
+   不要直接在 ZIP/RAR 压缩包里双击运行脚本或 HTML。
+
+2. 如果电脑没有安装 Node.js：
+   - 双击 node-v24.16.0-x64.msi 安装；
+   - 安装完成后重新打开文件夹；
+   - 如需检查，打开命令行输入：
+     node -v
+   - 能显示版本号表示安装成功。
+
+3. 双击 start-proxy.bat。
+   正常情况下本地代理会在后台启动，窗口自动关闭。
+
+4. 双击 check-proxy.bat。
+   如果显示 OK，说明代理已经启动。
+
+5. 双击打开：
+   约仓工具2.5_店铺SKU名称独立版.html
+
+6. 在工具顶部点击“接口”，为每个店铺填写：
+   - Client-Id
+   - Api-Key
+
+   Performance Client ID / Client Secret 当前每日销量功能不再需要，可留空；如果以后重新启用广告接口，可再填写。
+
+7. 保存接口信息后即可使用：
+   - 库存同步
+   - 近 28 天月销量同步（会写入各地区月销量输入框）
+   - 每日销量日历
+   - 送仓记录
+   - 智能校准箱子
+   - Excel 导出
+   - PDF 标签下载
+
+三、重要注意事项
+
+1. 部署包不应包含 config.local.json。
+   该文件可能包含本机保存过的接口配置，避免复制到其他电脑。
+
+2. 部署包不应包含运行日志：
+   - startup-log.txt
+   - proxy-runtime.log
+   - proxy-error.log
+
+   这些文件会在目标电脑运行时自动生成。
+
+3. 每台电脑第一次使用时，都需要在 HTML 工具里重新保存店铺接口信息。
+
+4. HTML 工具固定连接本地代理：
+   http://127.0.0.1:4173
+
+   所以使用前必须先运行 start-proxy.bat。
+
+5. 如果提示无法连接本地代理，常见原因包括：
+   - 没有运行 start-proxy.bat；
+   - 代理被 stop-proxy.bat 关闭了；
+   - 4173 端口被其他程序占用；
+   - Node.js 没有安装成功；
+   - 直接在压缩包里运行，没有先解压整个文件夹。
+
+6. Excel 导出需要加载 SheetJS：
+   https://cdn.sheetjs.com/
+
+   如果目标电脑完全不能访问外网，Excel 导出可能不可用。
+
+7. 工具底部 JSON 导出会包含店铺接口密钥。
+   不要把带真实 Client-Id、Api-Key、Performance Client ID 或 Client Secret 的 JSON 备份发给他人。
+
+四、建议放置位置
+
+建议把整个文件夹放在固定路径，例如：
+
+D:\Ozon约仓工具
+
+或：
+
+C:\Users\Administrator\Desktop\Ozon约仓工具
+
+不要只复制 HTML 文件。必须连同 proxy、启动脚本、停止脚本和说明文件一起复制。
+
+五、更新部署包时
+
+1. 更新主 HTML。
+2. 更新 proxy/server.js。
+3. 更新 使用说明.txt 和 部署说明.txt。
+4. 不打包 tests 文件夹和运行日志。
+5. 重新压缩为部署包。

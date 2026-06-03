@@ -1,0 +1,12 @@
+{
+  "name": "ozon-fast-supply-booking",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal local webpage for Ozon FBO supply booking workflows.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

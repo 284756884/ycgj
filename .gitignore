@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Runtime logs
+*.log
+startup-log.txt
+
+# Local environment
+.env
+.env.*
+
+# Packaged artifacts and installers
+*.zip
+*.msi
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
