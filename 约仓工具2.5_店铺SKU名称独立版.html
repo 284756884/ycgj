@@ -1466,6 +1466,17 @@
       const today = formatDateYmd(baseDate);
       return (dates || []).filter(date => typeof date === 'string' && date <= today);
     }
+    function getDailyAnalyticsOverwriteDate(baseDate = new Date()) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() - 1);
+      return formatDateYmd(d);
+    }
+    function mergeDailyAnalyticsSyncDates(syncableDates, missingDates, baseDate = new Date()) {
+      const overwriteDate = getDailyAnalyticsOverwriteDate(baseDate);
+      const dates = [...(missingDates || [])];
+      if ((syncableDates || []).includes(overwriteDate)) dates.push(overwriteDate);
+      return [...new Set(dates)].sort();
+    }
     function getRollingDailyAnalyticsDates(days = 28, baseDate = new Date()) {
       return filterSyncableDailyAnalyticsDates(getLastNDates(days, baseDate), baseDate);
     }
@@ -2016,8 +2027,9 @@
     async function syncMissingDailyAnalytics(datesOrDays = getRollingDailyAnalyticsDates(28), storeName = currentStore, article = currentSKU && currentSKU.article) {
       const dates = filterSyncableDailyAnalyticsDates(Array.isArray(datesOrDays) ? datesOrDays : getLastNDates(datesOrDays));
       const missing = getMissingDailyAnalyticsDates(dates, storeName, article);
-      if (!missing.length) return 0;
-      return syncDailyAnalyticsForDates(missing, storeName, article);
+      const targetDates = mergeDailyAnalyticsSyncDates(dates, missing);
+      if (!targetDates.length) return 0;
+      return syncDailyAnalyticsForDates(targetDates, storeName, article);
     }
 
     function renderDailyAnalyticsCalendar() {

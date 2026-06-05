@@ -19,7 +19,9 @@ globalThis.api = {
   applyMonthlySalesInputValue,
   filterRestorableInputs,
   normalizeRegionClusterMap,
-  mappingTextToList
+  mappingTextToList,
+  getDailyAnalyticsOverwriteDate,
+  mergeDailyAnalyticsSyncDates
 };
 `, context);
 
@@ -80,5 +82,17 @@ assert.equal(JSON.stringify(restorable), JSON.stringify({
   "inv-喀山": "10",
   "req-喀山": "200001",
 }));
+
+assert.equal(api.getDailyAnalyticsOverwriteDate(new Date(2026, 5, 4)), "2026-06-03");
+assert.equal(JSON.stringify(api.mergeDailyAnalyticsSyncDates(
+  ["2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
+  ["2026-06-04"],
+  new Date(2026, 5, 4)
+)), JSON.stringify(["2026-06-03", "2026-06-04"]));
+assert.equal(JSON.stringify(api.mergeDailyAnalyticsSyncDates(
+  ["2026-06-02", "2026-06-03", "2026-06-04"],
+  ["2026-06-03", "2026-06-04"],
+  new Date(2026, 5, 4)
+)), JSON.stringify(["2026-06-03", "2026-06-04"]));
 
 console.log("analytics sync helper tests passed");

@@ -41,6 +41,7 @@ assert.match(html, /openDailyAnalyticsModal\s*\(/, 'clicking monthly summary sho
 
 assert.match(html, /function\s+getMissingDailyAnalyticsDates\s*\(/, 'daily sales sync should only request uncached dates');
 assert.match(html, /function\s+filterSyncableDailyAnalyticsDates\s*\(/, 'daily sales sync should filter out future dates before requesting Seller analytics');
+assert.match(html, /function\s+mergeDailyAnalyticsSyncDates\s*\(/, 'daily sales sync should merge missing dates with the previous day overwrite date');
 assert.match(html, /function\s+getRollingDailyAnalyticsDates\s*\(/, 'daily sales cache should use a rolling 28-day window');
 assert.match(html, /function\s+getDailyAnalyticsSalesTotal\s*\(/, 'daily sales cache should expose a rolling total helper');
 assert.match(html, /function\s+syncDailyAnalyticsForDates\s*\(/, 'daily sales sync should sync selected dates');
@@ -99,6 +100,7 @@ assert.match(applyAnalyticsSummarySource, /applyMonthlySalesInputValue\s*\(\s*do
 assert.match(html, /monthlySummarySalesMap/, 'monthly sales sync needs a per SKU summary value cache');
 assert.doesNotMatch(syncDailyAnalyticsForDatesSource, /requireStorePerformanceInfo|fetchPerformanceSpendMap|resolveCurrentPerformanceCampaignIds/, 'daily sales sync must only use Seller analytics data');
 assert.match(syncMissingDailyAnalyticsSource, /filterSyncableDailyAnalyticsDates\s*\(/, 'syncMissingDailyAnalytics must avoid future dates rejected by date_to validation');
+assert.match(syncMissingDailyAnalyticsSource, /mergeDailyAnalyticsSyncDates\s*\(\s*dates\s*,\s*missing\s*/, 'syncMissingDailyAnalytics must also refresh the previous day so partial same-day cache is overwritten');
 assert.match(syncCurrentSkuAnalyticsSource, /const\s+rollingDates\s*=\s*getRollingDailyAnalyticsDates\s*\(\s*28\s*\)/, 'monthly sales sync should build the latest rolling 28-day window');
 assert.match(syncCurrentSkuAnalyticsSource, /const\s+summary\s*=\s*await\s+fetchCurrentAnalyticsStockSummary\s*\(\s*currentStore\s*\)/, 'monthly sales sync should fetch regional monthly sales');
 assert.match(syncCurrentSkuAnalyticsSource, /applyAnalyticsSummaryToCurrentSku\s*\(\s*summary\s*,\s*mode\s*\)/, 'monthly sales sync should apply regional monthly sales');
