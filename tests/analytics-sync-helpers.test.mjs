@@ -94,5 +94,10 @@ assert.equal(JSON.stringify(api.mergeDailyAnalyticsSyncDates(
   ["2026-06-03", "2026-06-04"],
   new Date(2026, 5, 4)
 )), JSON.stringify(["2026-06-03", "2026-06-04"]));
+assert.equal(JSON.stringify(api.mergeDailyAnalyticsSyncDates(
+  ["2026-06-02", "2026-06-03", "2026-06-04"],
+  [],
+  new Date(2026, 5, 4)
+)), JSON.stringify(["2026-06-03", "2026-06-04"]));
 
 console.log("analytics sync helper tests passed");

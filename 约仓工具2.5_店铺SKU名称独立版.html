@@ -1472,9 +1472,10 @@
       return formatDateYmd(d);
     }
     function mergeDailyAnalyticsSyncDates(syncableDates, missingDates, baseDate = new Date()) {
-      const overwriteDate = getDailyAnalyticsOverwriteDate(baseDate);
       const dates = [...(missingDates || [])];
-      if ((syncableDates || []).includes(overwriteDate)) dates.push(overwriteDate);
+      [getDailyAnalyticsOverwriteDate(baseDate), formatDateYmd(baseDate)].forEach(date => {
+        if ((syncableDates || []).includes(date)) dates.push(date);
+      });
       return [...new Set(dates)].sort();
     }
     function getRollingDailyAnalyticsDates(days = 28, baseDate = new Date()) {
