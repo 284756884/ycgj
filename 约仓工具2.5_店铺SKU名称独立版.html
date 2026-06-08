@@ -174,6 +174,18 @@
     .store-label { font-size: 0.65rem; color: #334155; font-weight: 700; white-space: nowrap; }
     .quick-date-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.35rem; margin-top: 0.6rem; }
     .quick-date-btn { justify-content: center; height: 32px; }
+    .date-change-available-head { display: flex; align-items: center; justify-content: space-between; gap: 0.35rem; font-size: 0.66rem; font-weight: 700; color: #0f172a; }
+    .date-change-nav { display: inline-flex; gap: 0.2rem; }
+    .date-change-nav-btn { width: 26px; height: 24px; border: 1px solid #cbd5e1; border-radius: 0.35rem; background: white; cursor: pointer; color: #334155; }
+    .date-change-weekdays, .date-change-calendar { display: grid; grid-template-columns: repeat(7, minmax(32px, 1fr)); gap: 0.18rem; }
+    .date-change-weekdays { margin-top: 0.4rem; color: #64748b; font-size: 0.58rem; text-align: center; }
+    .date-change-calendar { margin-top: 0.22rem; }
+    .date-change-day { min-height: 34px; border: 1px solid #e2e8f0; border-radius: 0.38rem; background: white; color: #334155; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.66rem; line-height: 1; }
+    .date-change-day.is-outside { color: #94a3b8; background: #f8fafc; }
+    .date-change-day.has-slot { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; font-weight: 700; }
+    .date-change-day.has-slot::after { content: ''; width: 5px; height: 5px; border-radius: 999px; background: #2563eb; display: block; margin-top: 3px; }
+    .date-change-day.is-selected { border-color: #2563eb; box-shadow: inset 0 0 0 1px #2563eb; }
+    .date-change-day:disabled { cursor: not-allowed; opacity: 0.45; }
 
     .pending-claim-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.62rem; }
     .pending-claim-table th, .pending-claim-table td { border: 1px solid #d1d5db; padding: 0.25rem; text-align: center; vertical-align: middle; }
@@ -537,6 +549,22 @@
       直接点击下方快捷日期，或点击日期框选择日历日期。
     </div>
     <input type="date" id="dateChangeInput" class="date-input" style="width:100%; height:34px; margin-top:0.65rem; border-radius:0.5rem;">
+    <div id="dateChangeModeWrap" style="display:none; margin-top:0.65rem; padding:0.45rem; border:1px solid #e2e8f0; border-radius:0.55rem; background:#f8fafc; font-size:0.65rem; line-height:1.5;">
+      <label class="inline-check"><input type="radio" name="dateChangeMode" value="local" checked>只改变页面交货时间</label>
+      <label class="inline-check"><input type="radio" name="dateChangeMode" value="backend">更改页面时间，同时更改后台时间</label>
+      <div style="color:#64748b; margin-top:0.25rem;">后台修改成功后才会同步修改页面日期；后台失败则页面日期不变。</div>
+    </div>
+    <div id="dateChangeAvailableWrap" style="display:none; margin-top:0.65rem; padding:0.45rem; border:1px solid #dbeafe; border-radius:0.55rem; background:#f8fafc;">
+      <div class="date-change-available-head">
+        <span id="dateChangeAvailableTitle">可改日期</span>
+        <span class="date-change-nav">
+          <button type="button" id="dateChangePrevMonthBtn" class="date-change-nav-btn" title="上个月">&#8249;</button>
+          <button type="button" id="dateChangeNextMonthBtn" class="date-change-nav-btn" title="下个月">&#8250;</button>
+        </span>
+      </div>
+      <div class="date-change-weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+      <div id="dateChangeAvailableCalendar" class="date-change-calendar"></div>
+    </div>
     <div class="quick-date-grid">
       <button class="btn btn-outline quick-date-btn" data-mode="today">今天</button>
       <button class="btn btn-outline quick-date-btn" data-offset="1">明天</button>
@@ -545,6 +573,7 @@
       <button class="btn btn-outline quick-date-btn" data-offset="7">+7天</button>
       <button class="btn btn-outline quick-date-btn" data-offset="-1">前一天</button>
     </div>
+    <div id="dateChangeProgressText" style="display:none; margin-top:0.55rem; padding:0.45rem; border:1px solid #e2e8f0; border-radius:0.5rem; background:#f8fafc; color:#475569; font-size:0.62rem; line-height:1.45; white-space:pre-wrap;"></div>
     <div class="modal-buttons">
       <button id="confirmDateChangeBtn" class="btn btn-primary">确定改期</button>
       <button id="closeDateChangeModalBtn" class="btn btn-outline">取消</button>
@@ -577,6 +606,9 @@
     let ozonNextRequestAt = 0;
     let pendingDateChangeHandler = null;
     let pendingDateBase = null;
+    let pendingDateChangeOptions = {};
+    let pendingDateAvailableSlotsByDate = {};
+    let pendingDateAvailableMonth = null;
 
     let warehouseMap = {
       "阿塞拜疆": [], "阿拉木图": ["АЛМАТЫ_2_РФЦ"], "亚美尼亚": [], "阿斯塔纳": [],
@@ -848,18 +880,127 @@
       });
       if (!storeList.includes(currentStore)) currentStore = DEFAULT_STORE;
     }
+    function parseDateOnlyLocal(value) {
+      const parts = String(value || '').split('-').map(Number);
+      if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+        return new Date(parts[0], parts[1] - 1, Number.isFinite(parts[2]) ? parts[2] : 1);
+      }
+      const fallback = new Date(value);
+      return Number.isNaN(fallback.getTime()) ? new Date() : fallback;
+    }
     function formatDateOffset(baseDate, offsetDays) {
       const base = baseDate ? new Date(baseDate + 'T00:00:00') : new Date();
       base.setDate(base.getDate() + offsetDays);
       return base.toISOString().slice(0,10);
     }
-    function openDateChangeModal({ title, oldDate, onConfirm }) {
+    function openDateChangeModal({ title, oldDate, onConfirm, enableBackendChange = false, showAvailableDates = false, singleBackendRequestNo = '' }) {
       pendingDateChangeHandler = onConfirm;
       pendingDateBase = oldDate || new Date().toISOString().slice(0,10);
+      pendingDateChangeOptions = {
+        enableBackendChange: Boolean(enableBackendChange),
+        showAvailableDates: Boolean(showAvailableDates),
+        singleBackendRequestNo: String(singleBackendRequestNo || '').trim()
+      };
+      pendingDateAvailableMonth = parseDateOnlyLocal(pendingDateBase);
       document.getElementById('dateChangeTitle').innerText = title || '📅 更改日期';
       document.getElementById('dateChangeOldLabel').innerText = pendingDateBase;
       document.getElementById('dateChangeInput').value = pendingDateBase;
+      const modeWrap = document.getElementById('dateChangeModeWrap');
+      if (modeWrap) modeWrap.style.display = enableBackendChange ? 'block' : 'none';
+      const localMode = document.querySelector('input[name="dateChangeMode"][value="local"]');
+      const backendMode = document.querySelector('input[name="dateChangeMode"][value="backend"]');
+      if (localMode) localMode.checked = !enableBackendChange;
+      if (backendMode) backendMode.checked = Boolean(enableBackendChange);
+      clearDateChangeAvailability();
+      if (showAvailableDates) {
+        const wrap = document.getElementById('dateChangeAvailableWrap');
+        if (wrap) wrap.style.display = 'block';
+        renderDateChangeAvailableCalendar();
+      }
+      setDateChangeProgress('');
       document.getElementById('dateChangeModal').style.display = 'flex';
+    }
+    function clearDateChangeAvailability() {
+      pendingDateAvailableSlotsByDate = {};
+      const wrap = document.getElementById('dateChangeAvailableWrap');
+      const calendar = document.getElementById('dateChangeAvailableCalendar');
+      const title = document.getElementById('dateChangeAvailableTitle');
+      if (wrap) wrap.style.display = 'none';
+      if (calendar) calendar.innerHTML = '';
+      if (title) title.textContent = '可改日期';
+    }
+    function setDateChangeAvailableSlots(slotsByDate = {}, baseDate = pendingDateBase) {
+      pendingDateAvailableSlotsByDate = slotsByDate && typeof slotsByDate === 'object' ? slotsByDate : {};
+      const dates = Object.keys(pendingDateAvailableSlotsByDate).sort();
+      const baseMonth = parseDateOnlyLocal(baseDate || dates[0] || pendingDateBase);
+      const hasSlotInBaseMonth = dates.some(date => {
+        const d = parseDateOnlyLocal(date);
+        return d.getFullYear() === baseMonth.getFullYear() && d.getMonth() === baseMonth.getMonth();
+      });
+      pendingDateAvailableMonth = hasSlotInBaseMonth ? baseMonth : parseDateOnlyLocal(dates[0] || baseDate || pendingDateBase);
+      const wrap = document.getElementById('dateChangeAvailableWrap');
+      if (wrap) wrap.style.display = 'block';
+      renderDateChangeAvailableCalendar();
+    }
+    function renderDateChangeAvailableCalendar() {
+      const wrap = document.getElementById('dateChangeAvailableWrap');
+      const calendar = document.getElementById('dateChangeAvailableCalendar');
+      if (!wrap || !calendar || wrap.style.display === 'none') return;
+      if (!pendingDateAvailableMonth) pendingDateAvailableMonth = parseDateOnlyLocal(pendingDateBase);
+      const title = document.getElementById('dateChangeAvailableTitle');
+      const selectedDate = document.getElementById('dateChangeInput')?.value || '';
+      const availableDates = Object.keys(pendingDateAvailableSlotsByDate || {});
+      if (title) {
+        const year = pendingDateAvailableMonth.getFullYear();
+        const month = pendingDateAvailableMonth.getMonth() + 1;
+        title.textContent = `可改日期：${availableDates.length} 天 · ${year}年${month}月`;
+      }
+      calendar.innerHTML = getCalendarMonthDates(pendingDateAvailableMonth).map(item => {
+        const hasSlot = Boolean(pendingDateAvailableSlotsByDate && pendingDateAvailableSlotsByDate[item.date]);
+        const classes = [
+          'date-change-day',
+          item.inMonth ? '' : 'is-outside',
+          hasSlot ? 'has-slot' : '',
+          item.date === selectedDate ? 'is-selected' : ''
+        ].filter(Boolean).join(' ');
+        return `<button type="button" class="${classes}" data-date="${item.date}" ${hasSlot ? '' : 'disabled'}><span>${item.day}</span></button>`;
+      }).join('');
+      calendar.querySelectorAll('.date-change-day.has-slot').forEach(btn => {
+        btn.onclick = () => {
+          const date = btn.dataset.date;
+          document.getElementById('dateChangeInput').value = date;
+          pendingDateAvailableMonth = parseDateOnlyLocal(date);
+          renderDateChangeAvailableCalendar();
+        };
+      });
+    }
+    function moveDateChangeAvailableMonth(offset) {
+      const current = pendingDateAvailableMonth || parseDateOnlyLocal(document.getElementById('dateChangeInput')?.value || pendingDateBase);
+      pendingDateAvailableMonth = new Date(current.getFullYear(), current.getMonth() + offset, 1);
+      renderDateChangeAvailableCalendar();
+    }
+    function getSelectedDateChangeMode() {
+      if (!pendingDateChangeOptions.enableBackendChange) return 'local';
+      const selected = document.querySelector('input[name="dateChangeMode"]:checked');
+      return selected && selected.value === 'backend' ? 'backend' : 'local';
+    }
+    function setDateChangeProgress(text) {
+      const el = document.getElementById('dateChangeProgressText');
+      if (!el) return;
+      el.textContent = text || '';
+      el.style.display = text ? 'block' : 'none';
+    }
+    function setDateChangeBusy(isBusy) {
+      const confirmBtn = document.getElementById('confirmDateChangeBtn');
+      const closeBtn = document.getElementById('closeDateChangeModalBtn');
+      const dateInput = document.getElementById('dateChangeInput');
+      if (confirmBtn) {
+        confirmBtn.disabled = isBusy;
+        confirmBtn.textContent = isBusy ? '改期中...' : '确定改期';
+      }
+      if (closeBtn) closeBtn.disabled = isBusy;
+      if (dateInput) dateInput.disabled = isBusy;
+      document.querySelectorAll('.quick-date-btn, input[name="dateChangeMode"], .date-change-nav-btn, .date-change-day.has-slot').forEach(el => { el.disabled = isBusy; });
     }
     let shipSearchTerm = '';
 
@@ -2343,15 +2484,35 @@
           const d = getSkuData(region,art);
           const shipment = d.pendingShipments.find(ps => String(ps.id) === String(id));
           if(!shipment) return;
+          const requestNo = String(shipment.requestNo || '').trim();
+          if (!requestNo) {
+            alert('该记录没有交货申请号，无法同步后台改期');
+            return;
+          }
           openDateChangeModal({
             title: `📅 修改 ${region} 的送仓日期`,
             oldDate,
-            onConfirm: (newDate) => {
+            showAvailableDates: true,
+            singleBackendRequestNo: requestNo,
+            onConfirm: async (newDate) => {
               if (!newDate || newDate === oldDate) return;
+              const singleBackend = pendingDateChangeOptions.singleBackend;
+              if (!singleBackend || singleBackend.requestNo !== requestNo) {
+                throw new Error('可改日期还没有查询完成，请稍后再确认');
+              }
+              const timeslot = singleBackend.slotsByDate && singleBackend.slotsByDate[newDate];
+              if (!timeslot) throw new Error(`所选日期 ${newDate} 没有可提交的后台时间段，请选择带蓝点的日期`);
+              setDateChangeProgress(`正在提交申请 ${requestNo} 的后台改期...`);
+              await updateSupplyOrderTimeslot(singleBackend.supplyOrderId, timeslot, currentStore);
               shipment.date = newDate;
               persist();
               renderAll();
+              showCopyToast(`申请 ${requestNo} 已改期到 ${newDate}`);
             }
+          });
+          loadSingleDateChangeAvailability(requestNo, oldDate, currentStore).catch(error => {
+            if (pendingDateChangeOptions.singleBackendRequestNo !== requestNo) return;
+            setDateChangeProgress(`可改日期查询失败：${error.message || error}`);
           });
         };
       });
@@ -2362,14 +2523,28 @@
           openDateChangeModal({
             title: `📅 将 ${oldDate} 所有记录改期`,
             oldDate,
-            onConfirm: (newDate) => {
+            enableBackendChange: true,
+            onConfirm: async (newDate, options = {}) => {
               if (!newDate || newDate === oldDate) return;
-              REGION_ORDER.forEach(region => {
-                const d=getSkuData(region,art);
-                d.pendingShipments.forEach(ps => { if(ps.date===oldDate) ps.date = newDate; });
-              });
+              if (options.mode === 'backend') {
+                setDateChangeProgress('准备后台改期...');
+                const result = await changePendingDateWithBackend(oldDate, newDate, currentStore, status => {
+                  setDateChangeProgress(formatBackendDateChangeProgress(status));
+                });
+                const changed = applyPendingShipmentsDateChangeForRequestNos(oldDate, newDate, result.successes.map(item => item.requestNo));
+                if (changed) {
+                  persist();
+                  renderAll();
+                }
+                setDateChangeProgress(formatBackendDateChangeResult(result, changed));
+                alert(formatBackendDateChangeResult(result, changed));
+                showCopyToast(`后台改期完成：成功 ${result.successes.length}，失败 ${result.failures.length}`);
+                return;
+              }
+              const changed = applyPendingShipmentsDateChange(oldDate, newDate);
               persist();
               renderAll();
+              showCopyToast(options.mode === 'backend' ? `后台已改期 ${changed} 条记录` : `页面已改期 ${changed} 条记录`);
             }
           });
         };
@@ -2705,6 +2880,192 @@
       const resolved = await resolveSupplyOrderIdsFromOrderNumbers([target], storeName);
       if (resolved.has(target)) return positiveSupplyId(resolved.get(target));
       throw new Error(`\u6ca1\u6709\u5728\u4ea4\u8d27\u7533\u8bf7\u5217\u8868\u4e2d\u627e\u5230\u7533\u8bf7\u53f7 ${target} \u5bf9\u5e94\u7684\u5185\u90e8 supply_order_id`);
+    }
+
+    function collectPendingShipmentsForDate(date) {
+      const art = getCurrentDataKey();
+      const rows = [];
+      REGION_ORDER.forEach(region => {
+        const d = getSkuData(region, art);
+        d.pendingShipments.forEach(shipment => {
+          if (shipment.date === date) rows.push({ region, shipment });
+        });
+      });
+      return rows;
+    }
+
+    function applyPendingShipmentsDateChange(oldDate, newDate) {
+      let count = 0;
+      collectPendingShipmentsForDate(oldDate).forEach(({ shipment }) => {
+        shipment.date = newDate;
+        count++;
+      });
+      return count;
+    }
+
+    function applyPendingShipmentsDateChangeForRequestNos(oldDate, newDate, requestNos) {
+      const targets = new Set((requestNos || []).map(value => String(value || '').trim()).filter(Boolean));
+      let count = 0;
+      if (!targets.size) return count;
+      collectPendingShipmentsForDate(oldDate).forEach(({ shipment }) => {
+        if (!targets.has(String(shipment.requestNo || '').trim())) return;
+        shipment.date = newDate;
+        count++;
+      });
+      return count;
+    }
+
+    function extractSupplyOrderTimeslots(value) {
+      const body = getUpstreamBody(value);
+      const slots = body && (body.timeslots || body.slots || body.available_timeslots || body.result?.timeslots || body.result?.slots);
+      return Array.isArray(slots) ? slots.filter(slot => slot && slot.from && slot.to) : [];
+    }
+
+    function supplyOrderTimezoneOffsetSeconds(value) {
+      const body = getUpstreamBody(value);
+      const raw = body && (body.timezone?.offset || body.result?.timezone?.offset || body.timezone_offset || body.timezoneOffset);
+      const number = Number(String(raw || '10800s').replace('s', ''));
+      return Number.isFinite(number) ? number : 10800;
+    }
+
+    function formatOzonLocalDate(isoValue, offsetSeconds) {
+      const date = new Date(isoValue);
+      if (Number.isNaN(date.getTime())) return '';
+      return new Date(date.getTime() + offsetSeconds * 1000).toISOString().slice(0, 10);
+    }
+
+    function collectSupplyOrderTimeslotsByDate(timeslotResponse) {
+      const offsetSeconds = supplyOrderTimezoneOffsetSeconds(timeslotResponse);
+      const slotsByDate = {};
+      extractSupplyOrderTimeslots(timeslotResponse)
+        .sort((a, b) => new Date(a.from) - new Date(b.from))
+        .forEach(slot => {
+          const date = formatOzonLocalDate(slot.from, offsetSeconds);
+          if (!date || slotsByDate[date]) return;
+          slotsByDate[date] = slot;
+        });
+      return slotsByDate;
+    }
+
+    function chooseSupplyOrderTimeslotForDate(timeslotResponse, targetDate) {
+      return collectSupplyOrderTimeslotsByDate(timeslotResponse)[targetDate] || null;
+    }
+
+    async function fetchSupplyOrderTimeslots(supplyOrderId, storeName = currentStore) {
+      return ozonRequest('/v1/supply-order/timeslot/get', {
+        supply_order_id: positiveSupplyId(supplyOrderId)
+      }, storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+    }
+
+    async function updateSupplyOrderTimeslot(supplyOrderId, timeslot, storeName = currentStore) {
+      if (!timeslot || !timeslot.from || !timeslot.to) throw new Error('没有可提交的后台发运时间段');
+      return ozonRequest('/v1/supply-order/timeslot/update', {
+        supply_order_id: positiveSupplyId(supplyOrderId),
+        timeslot: {
+          from: timeslot.from,
+          to: timeslot.to
+        }
+      }, storeName, { attempts: 5, baseDelayMs: 2500, minIntervalMs: 1500 });
+    }
+
+    async function loadSingleDateChangeAvailability(requestNo, oldDate, storeName = currentStore) {
+      const cleanRequestNo = String(requestNo || '').trim();
+      if (!cleanRequestNo) throw new Error('该记录没有交货申请号，无法查询后台可改日期');
+      const isActive = () => pendingDateChangeOptions.singleBackendRequestNo === cleanRequestNo;
+      requireStoreApiInfo(storeName);
+      if (!isActive()) return null;
+      setDateChangeProgress(`正在查询申请 ${cleanRequestNo} 的可改日期...`);
+      const resolvedMap = await resolveSupplyOrderIdsFromOrderNumbers([cleanRequestNo], storeName);
+      if (!isActive()) return null;
+      const supplyOrderId = resolvedMap.get(cleanRequestNo);
+      if (!supplyOrderId) throw new Error('没有找到对应的内部 supply_order_id');
+
+      setDateChangeProgress(`正在读取申请 ${cleanRequestNo} 的后台可改时间段...`);
+      const timeslotResponse = await fetchSupplyOrderTimeslots(supplyOrderId, storeName);
+      if (!isActive()) return null;
+      const slotsByDate = collectSupplyOrderTimeslotsByDate(timeslotResponse);
+      pendingDateChangeOptions.singleBackend = { requestNo: cleanRequestNo, supplyOrderId, slotsByDate };
+      setDateChangeAvailableSlots(slotsByDate, oldDate);
+      const availableCount = Object.keys(slotsByDate).length;
+      setDateChangeProgress(availableCount
+        ? `申请 ${cleanRequestNo} 可改日期：${availableCount} 天。请选择带蓝点的日期后确认。`
+        : `申请 ${cleanRequestNo} 暂无可改日期。`);
+      return pendingDateChangeOptions.singleBackend;
+    }
+
+    async function syncSupplyOrderTimeslotDateForRequests(requestNos, newDate, storeName = currentStore, onProgress) {
+      const targets = [...new Set((requestNos || []).map(value => String(value || '').trim()).filter(Boolean))];
+      if (!targets.length) throw new Error('该日期没有可同步后台的交货申请号');
+      requireStoreApiInfo(storeName);
+      const successes = [];
+      const failures = [];
+      for (let index = 0; index < targets.length; index++) {
+        const requestNo = targets[index];
+        try {
+          if (typeof onProgress === 'function') onProgress({ stage: 'resolve', index: index + 1, total: targets.length, requestNo, successCount: successes.length, failureCount: failures.length });
+          const resolvedMap = await resolveSupplyOrderIdsFromOrderNumbers([requestNo], storeName);
+          const supplyOrderId = resolvedMap.get(requestNo);
+          if (!supplyOrderId) throw new Error('没有找到对应的内部 supply_order_id');
+
+          if (typeof onProgress === 'function') onProgress({ stage: 'timeslot', index: index + 1, total: targets.length, requestNo, successCount: successes.length, failureCount: failures.length });
+          const timeslotResponse = await fetchSupplyOrderTimeslots(supplyOrderId, storeName);
+          const timeslot = chooseSupplyOrderTimeslotForDate(timeslotResponse, newDate);
+          if (!timeslot) throw new Error(`目标日期 ${newDate} 没有可用发运时间段`);
+
+          if (typeof onProgress === 'function') onProgress({ stage: 'update', index: index + 1, total: targets.length, requestNo, successCount: successes.length, failureCount: failures.length });
+          const response = await updateSupplyOrderTimeslot(supplyOrderId, timeslot, storeName);
+          successes.push({ requestNo, supplyOrderId, timeslot, response });
+        } catch (error) {
+          failures.push({ requestNo, message: error.message || String(error) });
+        }
+        if (typeof onProgress === 'function') onProgress({ stage: 'done', index: index + 1, total: targets.length, requestNo, successCount: successes.length, failureCount: failures.length });
+      }
+      return { successes, failures, total: targets.length };
+    }
+
+    async function changePendingDateWithBackend(oldDate, newDate, storeName = currentStore, onProgress) {
+      const rows = collectPendingShipmentsForDate(oldDate);
+      if (!rows.length) throw new Error('该日期没有待送仓记录');
+      const missing = rows.filter(row => !String(row.shipment.requestNo || '').trim());
+      const requestNos = rows.map(row => row.shipment.requestNo).filter(Boolean);
+      const result = requestNos.length
+        ? await syncSupplyOrderTimeslotDateForRequests(requestNos, newDate, storeName, onProgress)
+        : { successes: [], failures: [], total: 0 };
+      const missingFailures = missing.map(row => ({
+        requestNo: row.region,
+        message: '没有交货申请号'
+      }));
+      return {
+        successes: result.successes,
+        failures: [...missingFailures, ...result.failures],
+        total: result.total + missingFailures.length
+      };
+    }
+
+    function formatBackendDateChangeProgress(status = {}) {
+      const stageLabels = { resolve: '查询内部ID', timeslot: '查询可改时间', update: '提交后台改期', done: '已处理' };
+      return [
+        `后台改期进度：${status.index || 0}/${status.total || 0}`,
+        `当前申请：${status.requestNo || '-'}`,
+        `步骤：${stageLabels[status.stage] || status.stage || '-'}`,
+        `成功：${status.successCount || 0}，失败：${status.failureCount || 0}`
+      ].join('\n');
+    }
+
+    function formatBackendDateChangeResult(result, changedCount) {
+      const successes = result && Array.isArray(result.successes) ? result.successes : [];
+      const failures = result && Array.isArray(result.failures) ? result.failures : [];
+      const lines = [
+        `后台改期完成。`,
+        `成功申请：${successes.length} 个，失败：${failures.length} 个。`,
+        `页面已同步改期记录：${changedCount} 条。`
+      ];
+      if (failures.length) {
+        lines.push('', '失败明细：');
+        failures.slice(0, 12).forEach(item => lines.push(`${item.requestNo || '-'}：${item.message || '失败'}`));
+        if (failures.length > 12) lines.push(`... 还有 ${failures.length - 12} 条失败未显示`);
+      }
+      return lines.join('\n');
     }
 
     function readSavedVehiclePassInfo() {
@@ -3951,23 +4312,48 @@
     document.getElementById('ownerSkuInput').addEventListener('keypress', e => { if(e.key === 'Enter') changeCurrentOwnership(); });
     document.getElementById('ownerNewStoreInput').addEventListener('keypress', e => { if(e.key === 'Enter') changeCurrentOwnership(); });
 
-    document.getElementById('confirmDateChangeBtn').onclick = () => {
+    document.getElementById('confirmDateChangeBtn').onclick = async () => {
       const newDate = document.getElementById('dateChangeInput').value;
       if (!newDate) { alert('请选择日期'); return; }
-      if (typeof pendingDateChangeHandler === 'function') pendingDateChangeHandler(newDate);
+      try {
+        setDateChangeBusy(true);
+        if (typeof pendingDateChangeHandler === 'function') {
+          await pendingDateChangeHandler(newDate, { mode: getSelectedDateChangeMode() });
+        }
+      } catch (error) {
+        alert(`改期失败：${error.message || error}`);
+        return;
+      } finally {
+        setDateChangeBusy(false);
+      }
       pendingDateChangeHandler = null;
       pendingDateBase = null;
+      pendingDateChangeOptions = {};
+      pendingDateAvailableMonth = null;
+      clearDateChangeAvailability();
       document.getElementById('dateChangeModal').style.display = 'none';
     };
     document.getElementById('closeDateChangeModalBtn').onclick = () => {
       pendingDateChangeHandler = null;
       pendingDateBase = null;
+      pendingDateChangeOptions = {};
+      pendingDateAvailableMonth = null;
+      clearDateChangeAvailability();
       document.getElementById('dateChangeModal').style.display = 'none';
     };
+    document.getElementById('dateChangeInput').addEventListener('change', () => {
+      pendingDateAvailableMonth = parseDateOnlyLocal(document.getElementById('dateChangeInput').value || pendingDateBase);
+      renderDateChangeAvailableCalendar();
+    });
+    document.getElementById('dateChangePrevMonthBtn').onclick = () => moveDateChangeAvailableMonth(-1);
+    document.getElementById('dateChangeNextMonthBtn').onclick = () => moveDateChangeAvailableMonth(1);
     document.querySelectorAll('.quick-date-btn').forEach(btn => {
       btn.onclick = () => {
-        if (btn.dataset.mode === 'today') document.getElementById('dateChangeInput').value = new Date().toISOString().slice(0,10);
-        else document.getElementById('dateChangeInput').value = formatDateOffset(pendingDateBase, parseInt(btn.dataset.offset,10)||0);
+        const input = document.getElementById('dateChangeInput');
+        if (btn.dataset.mode === 'today') input.value = new Date().toISOString().slice(0,10);
+        else input.value = formatDateOffset(pendingDateBase, parseInt(btn.dataset.offset,10)||0);
+        pendingDateAvailableMonth = parseDateOnlyLocal(input.value || pendingDateBase);
+        renderDateChangeAvailableCalendar();
       };
     });
 
