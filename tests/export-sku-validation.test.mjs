@@ -23,14 +23,14 @@ assert.match(
 
 assert.match(
   html,
-  /function\s+buildWorkbookFilename\s*\(\s*skuArticle\s*,\s*date\s*\)/,
-  '需要集中生成 SKU-日期.xlsx 文件名'
+  /function\s+buildWorkbookFilename\s*\(\s*skuArticle\s*,\s*storeName\s*,\s*date\s*\)/,
+  '需要集中生成 货号-店铺-日期.xlsx 文件名'
 );
 
 assert.match(
   html,
-  /buildWorkbookFilename\s*\(\s*skuArticle\s*,\s*date\s*\)/,
-  '保存表格时需要使用 SKU-日期.xlsx 命名'
+  /buildWorkbookFilename\s*\(\s*skuArticle\s*,\s*storeName\s*,\s*date\s*\)/,
+  '保存表格时需要使用 货号-店铺-日期.xlsx 命名'
 );
 
 assert.doesNotMatch(
@@ -41,8 +41,8 @@ assert.doesNotMatch(
 
 assert.match(
   html,
-  /async\s+function\s+saveWorkbookToDirectory\s*\(\s*wb\s*,\s*date\s*,\s*directory\s*,\s*skuArticle\s*\)/,
-  '保存表格函数需要接收当前 SKU'
+  /async\s+function\s+saveWorkbookToDirectory\s*\(\s*wb\s*,\s*date\s*,\s*directory\s*,\s*skuArticle\s*,\s*storeName\s*=\s*currentStore\s*\)/,
+  '保存表格函数需要接收当前 SKU 和店铺'
 );
 
 assert.match(

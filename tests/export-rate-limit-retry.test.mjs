@@ -45,7 +45,7 @@ function findFunctionBodyStart(source, start) {
   throw new Error('Could not locate function body');
 }
 
-assert.match(html, /const\s+EXPORT_RETRY_DELAY_MS\s*=\s*3000/, 'export retries should wait 3 seconds between retryable request failures');
+assert.match(html, /const\s+EXPORT_RETRY_DELAY_MS\s*=\s*1500/, 'export retries should wait 1.5 seconds between retryable request failures');
 assert.match(html, /function\s+isRetryableExportRequestError\s*\(/, 'export should classify retryable request failures');
 assert.match(html, /async\s+function\s+retryExportRequest\s*\(/, 'export should have a retry wrapper that does not abort on rate limit');
 assert.match(html, /async\s+function\s+exportOzonRequest\s*\(/, 'export Ozon calls should use the retry wrapper');
@@ -54,7 +54,7 @@ assert.match(html, /async\s+function\s+exportLocalJsonRequest\s*\(/, 'export PDF
 const retryExportRequestSource = extractAsyncFunctionSource(html, 'retryExportRequest');
 assert.match(retryExportRequestSource, /while\s*\(\s*true\s*\)/, 'retryable export request failures should keep retrying instead of aborting the export');
 assert.match(retryExportRequestSource, /isRetryableExportRequestError\s*\(\s*error\s*\)/, 'retry wrapper should only continue for retryable request failures');
-assert.match(retryExportRequestSource, /await\s+sleep\s*\(\s*EXPORT_RETRY_DELAY_MS\s*\)/, 'retry wrapper should wait the configured 3 seconds before retrying');
+assert.match(retryExportRequestSource, /await\s+sleep\s*\(\s*EXPORT_RETRY_DELAY_MS\s*\)/, 'retry wrapper should wait the configured 1.5 seconds before retrying');
 assert.match(retryExportRequestSource, /throw\s+error/, 'non-retryable business errors should still stop the export');
 
 const exportOzonRequestSource = extractAsyncFunctionSource(html, 'exportOzonRequest');

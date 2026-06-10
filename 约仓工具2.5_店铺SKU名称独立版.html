@@ -186,6 +186,16 @@
     .date-change-day.has-slot::after { content: ''; width: 5px; height: 5px; border-radius: 999px; background: #2563eb; display: block; margin-top: 3px; }
     .date-change-day.is-selected { border-color: #2563eb; box-shadow: inset 0 0 0 1px #2563eb; }
     .date-change-day:disabled { cursor: not-allowed; opacity: 0.45; }
+    .export-mode-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.35rem; margin-top: 0.6rem; }
+    .export-mode-grid .inline-check { border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 0.45rem; background: #f8fafc; }
+    .export-request-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; margin-top: 0.55rem; font-size: 0.65rem; color: #334155; }
+    .export-request-list { max-height: 170px; overflow: auto; border: 1px solid #e2e8f0; border-radius: 0.55rem; margin-top: 0.35rem; background: #fff; }
+    .export-request-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 0.35rem; align-items: center; padding: 0.38rem 0.45rem; border-bottom: 1px solid #f1f5f9; font-size: 0.62rem; text-align: left; }
+    .export-request-row:last-child { border-bottom: none; }
+    .export-request-main { display: flex; flex-direction: column; gap: 0.12rem; min-width: 0; }
+    .export-request-no { font-weight: 700; color: #1e3a8a; word-break: break-all; }
+    .export-request-region { color: #64748b; word-break: break-word; }
+    .export-request-qty { font-weight: 700; color: #0f172a; white-space: nowrap; }
 
     .pending-claim-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.62rem; }
     .pending-claim-table th, .pending-claim-table td { border: 1px solid #d1d5db; padding: 0.25rem; text-align: center; vertical-align: middle; }
@@ -496,21 +506,31 @@
 </div>
 
 <div class="modal" id="boxModal">
-  <div class="modal-content" style="max-width: 460px;">
-    <h3>📦 校准并导出</h3>
+  <div class="modal-content" style="max-width: 560px;">
+    <h3>📦 导出</h3>
     <div style="font-size:0.65rem; color:#64748b; margin-top:0.35rem; line-height:1.5;">
-      会先按箱规校准当天所有带申请号的交货箱子，再生成表格并写入 Ozon 返回的货物ID。
+      先选择导出类型，再勾选当天需要处理的交货请求。表格导出会先按箱规校准，PDF 导出只下载所选申请号标签。
+    </div>
+    <div class="export-mode-grid">
+      <label class="inline-check"><input type="radio" name="exportMode" value="table" checked>导出表格</label>
+      <label class="inline-check"><input type="radio" name="exportMode" value="pdf">导出 PDF 文件</label>
     </div>
     <div class="modal-form">
-      <label>每箱箱规数量</label>
-      <input type="number" id="boxQuantityInput" placeholder="例如 30 / 60" min="1">
+      <div id="boxQuantityGroup">
+        <label>每箱箱规数量</label>
+        <input type="number" id="boxQuantityInput" placeholder="例如 30 / 60" min="1">
+      </div>
       <label>文件导出/标签保存目录</label>
       <input type="text" id="exportDirectoryInput" placeholder="例如 D:\Users\Administrator\Desktop\Ozon导出" autocomplete="off">
-      <label class="inline-check"><input type="checkbox" id="downloadLabelsAfterExport" checked> 生成表格后下载当天全部 PDF 标签</label>
     </div>
+    <div class="export-request-toolbar">
+      <label class="inline-check"><input type="checkbox" id="exportRequestSelectAll" checked>全选交货请求</label>
+      <span id="exportRequestCountText">0 个申请</span>
+    </div>
+    <div id="exportRequestList" class="export-request-list"></div>
     <div id="exportProgressText" class="ozon-progress">等待操作</div>
     <div class="modal-buttons">
-      <button id="confirmBoxBtn" class="btn btn-primary">开始校准并导出</button>
+      <button id="confirmBoxBtn" class="btn btn-primary">开始校准并导出表格</button>
       <button id="closeBoxModalBtn" class="btn btn-outline">取消</button>
     </div>
   </div>
@@ -598,7 +618,7 @@
     const OZON_PERFORMANCE_URL = 'http://127.0.0.1:4173/api/performance';
     const OZON_DOWNLOAD_PDF_URL = 'http://127.0.0.1:4173/api/download-pdf';
     const OZON_SAVE_FILE_URL = 'http://127.0.0.1:4173/api/save-file-base64';
-    const EXPORT_RETRY_DELAY_MS = 3000;
+    const EXPORT_RETRY_DELAY_MS = 1500;
 
     let pendingRestore = null;
     let pendingInputRestore = [];
@@ -1229,7 +1249,7 @@
         } catch (error) {
           if (!isRetryableExportRequestError(error)) throw error;
           retryCount++;
-          setExportProgress(`${label || '请求'} 暂时失败：${describeExportRequestError(error)}\n等待 3 秒后自动重新请求（第 ${retryCount} 次），导出不会中断。`);
+          setExportProgress(`${label || '请求'} 暂时失败：${describeExportRequestError(error)}\n等待 1.5 秒后自动重新请求（第 ${retryCount} 次），导出不会中断。`);
           await sleep(EXPORT_RETRY_DELAY_MS);
         }
       }
@@ -1416,8 +1436,8 @@
         .replace(/[. ]+$/g, '');
       return cleaned || 'SKU';
     }
-    function buildWorkbookFilename(skuArticle, date) {
-      return `${safeWorkbookFilenamePart(skuArticle)}-${safeWorkbookFilenamePart(date)}.xlsx`;
+    function buildWorkbookFilename(skuArticle, storeName, date) {
+      return `${safeWorkbookFilenamePart(skuArticle)}-${safeWorkbookFilenamePart(storeName)}-${safeWorkbookFilenamePart(date)}.xlsx`;
     }
     function normalizeSkuMatchValue(value) {
       return String(value || '').trim().toUpperCase();
@@ -2632,7 +2652,10 @@
           exportTargetDate = btn.dataset.date;
           document.getElementById('boxQuantityInput').value = '';
           document.getElementById('exportDirectoryInput').value = window.localStorage.getItem('ozonWarehouseExportDir') || '';
-          document.getElementById('downloadLabelsAfterExport').checked = true;
+          const tableMode = document.querySelector('input[name="exportMode"][value="table"]');
+          if (tableMode) tableMode.checked = true;
+          renderExportRequestSelection(exportTargetDate);
+          updateExportModeUI();
           setExportProgress(`准备导出 ${exportTargetDate} 的待送仓记录`);
           document.getElementById('boxModal').style.display = 'flex';
         };
@@ -3246,10 +3269,68 @@
       const close = document.getElementById('closeBoxModalBtn');
       if (btn) btn.disabled = busy;
       if (close) close.disabled = busy;
+      document.querySelectorAll('input[name="exportMode"], .export-request-checkbox, #exportRequestSelectAll, #boxQuantityInput, #exportDirectoryInput').forEach(el => { el.disabled = busy; });
     }
 
-    async function saveWorkbookToDirectory(wb, date, directory, skuArticle) {
-      const filename = buildWorkbookFilename(skuArticle, date);
+    function getSelectedExportMode() {
+      const selected = document.querySelector('input[name="exportMode"]:checked');
+      return selected && selected.value === 'pdf' ? 'pdf' : 'table';
+    }
+
+    function updateExportModeUI() {
+      const mode = getSelectedExportMode();
+      const boxQuantityGroup = document.getElementById('boxQuantityGroup');
+      const confirmBoxBtn = document.getElementById('confirmBoxBtn');
+      if (boxQuantityGroup) boxQuantityGroup.style.display = mode === 'table' ? 'block' : 'none';
+      if (confirmBoxBtn) confirmBoxBtn.textContent = mode === 'pdf' ? '开始导出 PDF' : '开始校准并导出表格';
+      exportRequestCheckboxChanged();
+    }
+
+    function exportRequestCheckboxChanged() {
+      const boxes = Array.from(document.querySelectorAll('.export-request-checkbox'));
+      const checked = boxes.filter(box => box.checked);
+      const selectAll = document.getElementById('exportRequestSelectAll');
+      const countText = document.getElementById('exportRequestCountText');
+      if (selectAll) {
+        selectAll.checked = boxes.length > 0 && checked.length === boxes.length;
+        selectAll.indeterminate = checked.length > 0 && checked.length < boxes.length;
+      }
+      if (countText) countText.textContent = `已选 ${checked.length} / ${boxes.length} 个申请`;
+    }
+
+    function renderExportRequestSelection(date = exportTargetDate) {
+      const rows = collectDateSupplyRows(date);
+      const list = document.getElementById('exportRequestList');
+      if (!list) return rows;
+      if (!rows.length) {
+        list.innerHTML = '<div class="export-request-row"><span></span><span>该日期没有带申请号的待送仓记录</span><span></span></div>';
+        exportRequestCheckboxChanged();
+        return rows;
+      }
+      list.innerHTML = rows.map(row => `
+        <label class="export-request-row">
+          <input type="checkbox" class="export-request-checkbox" data-request-no="${escapeHtml(row.requestNo)}" checked>
+          <span class="export-request-main">
+            <span class="export-request-no">${escapeHtml(row.requestNo)}</span>
+            <span class="export-request-region">${escapeHtml(row.region || '-')}</span>
+          </span>
+          <span class="export-request-qty">${parseInt(row.qty, 10) || 0}</span>
+        </label>
+      `).join('');
+      list.querySelectorAll('.export-request-checkbox').forEach(box => {
+        box.onchange = exportRequestCheckboxChanged;
+      });
+      exportRequestCheckboxChanged();
+      return rows;
+    }
+
+    function getSelectedExportRows(allRows = collectDateSupplyRows(exportTargetDate)) {
+      const selected = new Set(Array.from(document.querySelectorAll('.export-request-checkbox:checked')).map(box => box.dataset.requestNo).filter(Boolean));
+      return (allRows || []).filter(row => selected.has(row.requestNo));
+    }
+
+    async function saveWorkbookToDirectory(wb, date, directory, skuArticle, storeName = currentStore) {
+      const filename = buildWorkbookFilename(skuArticle, storeName, date);
       if (!directory) {
         XLSX.writeFile(wb, filename);
         return { ok: true, path: filename, browserDownload: true };
@@ -3263,75 +3344,98 @@
     }
 
     async function exportDateWithOzon() {
-      const boxQty = parseInt(document.getElementById('boxQuantityInput').value, 10);
-      if (!boxQty || boxQty <= 0) { alert('请输入有效的箱规数量'); return; }
+      const mode = getSelectedExportMode();
       const date = exportTargetDate;
       if (!date) return;
       const directory = document.getElementById('exportDirectoryInput').value.trim();
       if (!directory) { alert('请填写文件导出/标签保存目录'); return; }
       window.localStorage.setItem('ozonWarehouseExportDir', directory);
-      const rows = collectDateSupplyRows(date);
-      if (rows.length === 0) { alert('该日期没有带申请号的待送仓记录'); return; }
+      const allRows = collectDateSupplyRows(date);
+      const rows = getSelectedExportRows(allRows);
+      if (allRows.length === 0) { alert('该日期没有带申请号的待送仓记录'); return; }
+      if (rows.length === 0) { alert('请至少选择一个交货请求'); return; }
       try { requireStoreApiInfo(currentStore); } catch (error) { alert(error.message); openStoreApiModal(); return; }
-      if (!confirm(`将对 ${rows.length} 个交货申请执行智能校准，并覆盖写入箱子组成。确认继续？`)) return;
 
-      setExportBusy(true);
-      const syncMap = new Map();
-      try {
-        for (let index = 0; index < rows.length; index++) {
-          const row = rows[index];
-          setExportProgress(`(${index + 1}/${rows.length}) 正在校准申请 ${row.requestNo} ...`);
-          const result = await smartSyncSupply(row.requestNo, boxQty, currentStore, row.qty, { request: exportOzonRequest });
-          syncMap.set(row.requestNo, result);
-        }
+      if (mode === 'table') {
+        const boxQty = parseInt(document.getElementById('boxQuantityInput').value, 10);
+        if (!boxQty || boxQty <= 0) { alert('请输入有效的箱规数量'); return; }
+        if (!confirm(`将对选中的 ${rows.length} 个交货申请执行智能校准，并覆盖写入箱子组成。确认继续？`)) return;
 
-        const aoa = [['批次号', '交货ID', '货位ID', '箱子托盘', 'SKU', '箱唛']];
-        const merges = [];
-        let currentRow = 1;
-        for (const row of rows) {
-          const result = syncMap.get(row.requestNo);
-          const cargoes = result ? result.cargoes : [];
-          const lines = result ? result.targetCount : Math.ceil(row.qty / boxQty);
-          for (let i = 0; i < lines; i++) {
-            const cargoId = cargoes[i] ? cargoes[i].cargoId : '';
-            aoa.push([row.region, row.requestNo, cargoId, '箱子', row.skuArticle, '']);
-          }
-          if (lines > 1) {
-            merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow + lines - 1, c: 0 } });
-            merges.push({ s: { r: currentRow, c: 1 }, e: { r: currentRow + lines - 1, c: 1 } });
-          }
-          currentRow += lines;
-          aoa.push(['', '', '', '', '', '']);
-          currentRow++;
-        }
-
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet(aoa);
-        ws['!merges'] = merges;
-        XLSX.utils.book_append_sheet(wb, ws, '待送仓');
-        setExportProgress('箱子已校准，正在保存表格...');
-        const saved = await saveWorkbookToDirectory(wb, date, directory, currentSKU.article);
-
-        const shouldDownloadLabels = document.getElementById('downloadLabelsAfterExport').checked;
-        if (shouldDownloadLabels) {
+        setExportBusy(true);
+        const syncMap = new Map();
+        try {
           for (let index = 0; index < rows.length; index++) {
             const row = rows[index];
-            setExportProgress(`表格已保存：${saved.path || saved.filename}\n(${index + 1}/${rows.length}) 正在下载 PDF 标签 ${row.requestNo}.pdf ...`);
+            setExportProgress(`(${index + 1}/${rows.length}) 正在校准申请 ${row.requestNo} ...`);
+            const result = await smartSyncSupply(row.requestNo, boxQty, currentStore, row.qty, { request: exportOzonRequest });
+            syncMap.set(row.requestNo, result);
+          }
+
+          const aoa = [['批次号', '交货ID', '货位ID', '箱子托盘', 'SKU', '箱唛']];
+          const merges = [];
+          let currentRow = 1;
+          for (const row of rows) {
+            const result = syncMap.get(row.requestNo);
+            const cargoes = result ? result.cargoes : [];
+            const lines = result ? result.targetCount : Math.ceil(row.qty / boxQty);
+            for (let i = 0; i < lines; i++) {
+              const cargoId = cargoes[i] ? cargoes[i].cargoId : '';
+              aoa.push([row.region, row.requestNo, cargoId, '箱子', row.skuArticle, '']);
+            }
+            if (lines > 1) {
+              merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow + lines - 1, c: 0 } });
+              merges.push({ s: { r: currentRow, c: 1 }, e: { r: currentRow + lines - 1, c: 1 } });
+            }
+            currentRow += lines;
+            aoa.push(['', '', '', '', '', '']);
+            currentRow++;
+          }
+
+          const wb = XLSX.utils.book_new();
+          const ws = XLSX.utils.aoa_to_sheet(aoa);
+          ws['!merges'] = merges;
+          XLSX.utils.book_append_sheet(wb, ws, '待送仓');
+          setExportProgress('箱子已校准，正在保存表格...');
+          const saved = await saveWorkbookToDirectory(wb, date, directory, currentSKU.article);
+          setExportProgress(`完成。\n表格：${saved.path || saved.filename}\n已导出申请：${rows.length} 个`);
+          showCopyToast('校准、表格导出完成');
+        } catch (error) {
+          setExportProgress(`失败：${error.message}`);
+          alert(error.message);
+        } finally {
+          setExportBusy(false);
+        }
+        return;
+      }
+
+      if (mode === 'pdf') {
+        if (!confirm(`将导出选中的 ${rows.length} 个交货申请 PDF 标签。确认继续？`)) return;
+        setExportBusy(true);
+        try {
+          for (let index = 0; index < rows.length; index++) {
+            const row = rows[index];
+            setExportProgress(`(${index + 1}/${rows.length}) 正在下载 PDF 标签 ${row.requestNo}.pdf ...`);
             await downloadCargoLabelPdf(row.requestNo, directory, currentStore, { request: exportOzonRequest, localRequest: exportLocalJsonRequest });
           }
+          setExportProgress(`完成。\nPDF：已按申请号保存到 ${directory}\n已导出申请：${rows.length} 个`);
+          showCopyToast('PDF 导出完成');
+        } catch (error) {
+          setExportProgress(`失败：${error.message}`);
+          alert(error.message);
+        } finally {
+          setExportBusy(false);
         }
-
-        setExportProgress(`完成。\n表格：${saved.path || saved.filename}\nPDF：${shouldDownloadLabels ? '已按申请号保存到同一目录' : '未下载'}`);
-        showCopyToast('校准、导出完成');
-      } catch (error) {
-        setExportProgress(`失败：${error.message}`);
-        alert(error.message);
-      } finally {
-        setExportBusy(false);
       }
     }
 
     document.getElementById('confirmBoxBtn').onclick = () => exportDateWithOzon();
+    document.querySelectorAll('input[name="exportMode"]').forEach(input => {
+      input.onchange = updateExportModeUI;
+    });
+    document.getElementById('exportRequestSelectAll').onchange = function() {
+      document.querySelectorAll('.export-request-checkbox').forEach(box => { box.checked = this.checked; });
+      exportRequestCheckboxChanged();
+    };
     document.getElementById('closeBoxModalBtn').onclick = () => {
       if (document.getElementById('confirmBoxBtn').disabled) return;
       document.getElementById('boxModal').style.display = 'none';
