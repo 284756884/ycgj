@@ -65,7 +65,7 @@ assert.match(
 
 assert.match(
   html,
-  /readSupplyContext\s*\(\s*supplyNumber\s*,\s*storeName\s*,\s*fallbackQty\s*\)[\s\S]*assertSupplySkuMatchesCurrent\s*\(/,
+  /readSupplyContext\s*\(\s*supplyNumber\s*,\s*storeName\s*,\s*fallbackQty\s*,\s*options\s*\)[\s\S]*assertSupplySkuMatchesCurrent\s*\(/,
   'smartSyncSupply 读取交货申请商品后需要先做 SKU 一致性检查'
 );
 
@@ -77,8 +77,8 @@ assert.match(
 
 assert.match(
   html,
-  /smartSyncSupply\s*\(\s*row\.requestNo\s*,\s*boxQty\s*,\s*currentStore\s*,\s*row\.qty\s*\)/,
-  '批量导出校准需要继续走 smartSyncSupply 统一校验'
+  /smartSyncSupply\s*\(\s*row\.requestNo\s*,\s*boxQty\s*,\s*currentStore\s*,\s*row\.qty\s*,\s*\{\s*request:\s*exportOzonRequest\s*\}\s*\)/,
+  '批量导出校准需要继续走 smartSyncSupply 统一校验，并使用导出重试请求'
 );
 
 console.log('export workbook naming and SKU validation hooks are present');

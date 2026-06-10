@@ -598,6 +598,7 @@
     const OZON_PERFORMANCE_URL = 'http://127.0.0.1:4173/api/performance';
     const OZON_DOWNLOAD_PDF_URL = 'http://127.0.0.1:4173/api/download-pdf';
     const OZON_SAVE_FILE_URL = 'http://127.0.0.1:4173/api/save-file-base64';
+    const EXPORT_RETRY_DELAY_MS = 3000;
 
     let pendingRestore = null;
     let pendingInputRestore = [];
@@ -1209,6 +1210,35 @@
       try { bodyText = error && error.body ? JSON.stringify(error.body) : ''; } catch (e) {}
       const text = `${error && error.message || ''} ${bodyText}`;
       return /rate limit|too many requests|request rate limit|429|limit per second/i.test(text);
+    }
+    function isRetryableExportRequestError(error) {
+      if (isOzonRateLimitError(error)) return true;
+      let bodyText = '';
+      try { bodyText = error && error.body ? JSON.stringify(error.body) : ''; } catch (e) {}
+      const text = `${error && error.message || ''} ${bodyText}`;
+      return /temporarily|temporary|timeout|timed out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|HTTP 50[234]|502|503|504/i.test(text);
+    }
+    function describeExportRequestError(error) {
+      return String((error && error.message) || error || '请求失败').slice(0, 240);
+    }
+    async function retryExportRequest(label, requestFn) {
+      let retryCount = 0;
+      while (true) {
+        try {
+          return await requestFn();
+        } catch (error) {
+          if (!isRetryableExportRequestError(error)) throw error;
+          retryCount++;
+          setExportProgress(`${label || '请求'} 暂时失败：${describeExportRequestError(error)}\n等待 3 秒后自动重新请求（第 ${retryCount} 次），导出不会中断。`);
+          await sleep(EXPORT_RETRY_DELAY_MS);
+        }
+      }
+    }
+    async function exportOzonRequest(endpoint, body, storeName = currentStore) {
+      return retryExportRequest(endpoint, () => ozonRequest(endpoint, body, storeName, { attempts: 1, minIntervalMs: 1500 }));
+    }
+    async function exportLocalJsonRequest(url, payload) {
+      return retryExportRequest('PDF 文件下载', () => localJsonRequest(url, payload));
     }
     async function waitForOzonRequestSlot(minIntervalMs = 1200) {
       const now = Date.now();
@@ -1842,10 +1872,11 @@
         quant
       };
     }
-    async function readSupplyItemsByOrderId(supplyNumber, storeName) {
+    async function readSupplyItemsByOrderId(supplyNumber, storeName, options = {}) {
+      const request = options.request || ozonRequest;
       const allItems = [];
       for (let page = 1; page <= 10; page++) {
-        const response = await ozonRequest('/v1/supply-order/items', {
+        const response = await request('/v1/supply-order/items', {
           supply_order_id: supplyNumber,
           page,
           page_size: 100
@@ -1857,19 +1888,20 @@
       }
       return allItems;
     }
-    async function readSupplyContext(supplyId, storeName, fallbackQty) {
+    async function readSupplyContext(supplyId, storeName, fallbackQty, options = {}) {
+      const request = options.request || ozonRequest;
       const supplyNumber = positiveSupplyId(supplyId);
-      const cargoResponse = await ozonRequest('/v1/cargoes/get', { supply_ids: [supplyNumber] }, storeName);
+      const cargoResponse = await request('/v1/cargoes/get', { supply_ids: [supplyNumber] }, storeName);
       const currentCargoes = extractCargoList(cargoResponse);
       const bundleId = extractBundleId(cargoResponse);
       let items = [];
       let source = '';
       if (bundleId) {
-        const bundleResponse = await ozonRequest('/v1/supply-order/bundle', { bundle_ids: [bundleId], limit: 100 }, storeName);
+        const bundleResponse = await request('/v1/supply-order/bundle', { bundle_ids: [bundleId], limit: 100 }, storeName);
         items = extractBundleItems(bundleResponse).filter(item => item && typeof item === 'object');
         source = 'bundle';
       } else {
-        items = await readSupplyItemsByOrderId(supplyNumber, storeName);
+        items = await readSupplyItemsByOrderId(supplyNumber, storeName, options);
         source = 'supply-order/items';
       }
       if (items.length !== 1) throw new Error(`申请 ${supplyId} 包含 ${items.length} 个商品，不是单品申请，不能只按箱规校准。`);
@@ -1899,29 +1931,31 @@
       });
       return { targetCount, cargoes };
     }
-    async function waitForCargoes(supplyId, targetCount, storeName) {
+    async function waitForCargoes(supplyId, targetCount, storeName, options = {}) {
+      const request = options.request || ozonRequest;
       let latest = [];
       for (let attempt = 0; attempt < 10; attempt++) {
         if (attempt > 0) await sleep(1200);
-        const response = await ozonRequest('/v1/cargoes/get', { supply_ids: [positiveSupplyId(supplyId)] }, storeName);
+        const response = await request('/v1/cargoes/get', { supply_ids: [positiveSupplyId(supplyId)] }, storeName);
         latest = extractCargoList(response);
         if (latest.length >= targetCount) return latest.slice(0, targetCount);
       }
       return latest.slice(0, targetCount);
     }
-    async function smartSyncSupply(supplyId, boxQty, storeName = currentStore, fallbackQty) {
+    async function smartSyncSupply(supplyId, boxQty, storeName = currentStore, fallbackQty, options = {}) {
+      const request = options.request || ozonRequest;
       const supplyNumber = positiveSupplyId(supplyId);
       const parsedBoxQty = Number(boxQty);
       if (!Number.isFinite(parsedBoxQty) || parsedBoxQty <= 0) throw new Error('请输入有效的箱规数量');
-      const context = await readSupplyContext(supplyNumber, storeName, fallbackQty);
+      const context = await readSupplyContext(supplyNumber, storeName, fallbackQty, options);
       assertSupplySkuMatchesCurrent(supplyNumber, context.item);
       const { targetCount, cargoes } = buildSingleSkuCargoes(supplyNumber, context.item, parsedBoxQty);
-      const response = await ozonRequest('/v1/cargoes/create', {
+      const response = await request('/v1/cargoes/create', {
         supply_id: supplyNumber,
         delete_current_version: true,
         cargoes
       }, storeName);
-      const syncedCargoes = await waitForCargoes(supplyNumber, targetCount, storeName);
+      const syncedCargoes = await waitForCargoes(supplyNumber, targetCount, storeName, options);
       return {
         supplyId: String(supplyId),
         currentCount: context.currentCargoes.length,
@@ -1932,23 +1966,25 @@
         response
       };
     }
-    async function downloadCargoLabelPdf(supplyId, directory, storeName = currentStore) {
+    async function downloadCargoLabelPdf(supplyId, directory, storeName = currentStore, options = {}) {
+      const request = options.request || ozonRequest;
+      const localRequest = options.localRequest || localJsonRequest;
       const info = requireStoreApiInfo(storeName);
       const supplyNumber = positiveSupplyId(supplyId);
-      const createResponse = await ozonRequest('/v1/cargoes-label/create', { supply_id: supplyNumber }, storeName);
+      const createResponse = await request('/v1/cargoes-label/create', { supply_id: supplyNumber }, storeName);
       let fileUrl = extractCargoLabelUrl(createResponse);
       if (!fileUrl) {
         const operationId = extractOperationId(createResponse);
         if (!operationId) throw new Error(`申请 ${supplyId} 生成标签后没有返回 operation_id。Ozon返回：${compactApiResponse(createResponse)}`);
         for (let attempt = 0; attempt < 20; attempt++) {
           if (attempt > 0) await sleep(1500);
-          const labelResponse = await ozonRequest('/v1/cargoes-label/get', { operation_id: operationId }, storeName);
+          const labelResponse = await request('/v1/cargoes-label/get', { operation_id: operationId }, storeName);
           fileUrl = extractCargoLabelUrl(labelResponse);
           if (fileUrl) break;
         }
       }
       if (!fileUrl) throw new Error(`申请 ${supplyId} 的 PDF 标签暂未生成完成。`);
-      return localJsonRequest(OZON_DOWNLOAD_PDF_URL, {
+      return localRequest(OZON_DOWNLOAD_PDF_URL, {
         url: fileUrl,
         directory,
         filename: `${supplyId}.pdf`,
@@ -2744,9 +2780,12 @@
           const requestNo = String(ps.requestNo || '').trim();
           if (!requestNo) return;
           if (!byRequest.has(requestNo)) {
-            byRequest.set(requestNo, { region, requestNo, qty: 0, skuArticle: currentSKU.article || '' });
+            byRequest.set(requestNo, { region, regions: [], requestNo, qty: 0, skuArticle: currentSKU.article || '' });
           }
-          byRequest.get(requestNo).qty += parseInt(ps.qty, 10) || 0;
+          const row = byRequest.get(requestNo);
+          if (!row.regions.includes(region)) row.regions.push(region);
+          row.region = row.regions.join('、');
+          row.qty += parseInt(ps.qty, 10) || 0;
         });
       });
       return Array.from(byRequest.values());
@@ -3242,7 +3281,7 @@
         for (let index = 0; index < rows.length; index++) {
           const row = rows[index];
           setExportProgress(`(${index + 1}/${rows.length}) 正在校准申请 ${row.requestNo} ...`);
-          const result = await smartSyncSupply(row.requestNo, boxQty, currentStore, row.qty);
+          const result = await smartSyncSupply(row.requestNo, boxQty, currentStore, row.qty, { request: exportOzonRequest });
           syncMap.set(row.requestNo, result);
         }
 
@@ -3278,7 +3317,7 @@
           for (let index = 0; index < rows.length; index++) {
             const row = rows[index];
             setExportProgress(`表格已保存：${saved.path || saved.filename}\n(${index + 1}/${rows.length}) 正在下载 PDF 标签 ${row.requestNo}.pdf ...`);
-            await downloadCargoLabelPdf(row.requestNo, directory, currentStore);
+            await downloadCargoLabelPdf(row.requestNo, directory, currentStore, { request: exportOzonRequest, localRequest: exportLocalJsonRequest });
           }
         }
 
