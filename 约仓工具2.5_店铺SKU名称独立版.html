@@ -618,7 +618,8 @@
     const OZON_PERFORMANCE_URL = 'http://127.0.0.1:4173/api/performance';
     const OZON_DOWNLOAD_PDF_URL = 'http://127.0.0.1:4173/api/download-pdf';
     const OZON_SAVE_FILE_URL = 'http://127.0.0.1:4173/api/save-file-base64';
-    const EXPORT_RETRY_DELAY_MS = 1500;
+    const API_RETRY_DELAY_MS = 1500;
+    const EXPORT_RETRY_DELAY_MS = API_RETRY_DELAY_MS;
 
     let pendingRestore = null;
     let pendingInputRestore = [];
@@ -1204,26 +1205,32 @@
       showCopyToast.timer = setTimeout(() => toast.classList.remove('show'), 1200);
     }
     function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-    async function localJsonRequest(url, payload) {
-      let response;
-      try {
-        response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload || {})
-        });
-      } catch (error) {
-        throw new Error(`无法连接本地代理 ${url}。请先启动 http://127.0.0.1:4173/ 程序。`);
-      }
-      let data = null;
-      try { data = await response.json(); } catch (error) {}
-      if (!response.ok || (data && data.ok === false)) {
-        const message = (data && (data.error || data.message)) || `HTTP ${response.status}`;
-        const err = new Error(message);
-        err.body = data;
-        throw err;
-      }
-      return data;
+    async function localJsonRequest(url, payload, options = {}) {
+      const runRequest = async () => {
+        let response;
+        try {
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload || {})
+          });
+        } catch (error) {
+          const err = new Error(`无法连接本地代理 ${url}。请先启动 http://127.0.0.1:4173/ 程序。`);
+          err.cause = error;
+          throw err;
+        }
+        let data = null;
+        try { data = await response.json(); } catch (error) {}
+        if (!response.ok || (data && data.ok === false)) {
+          const message = (data && (data.error || data.message)) || `HTTP ${response.status}`;
+          const err = new Error(message);
+          err.body = data;
+          throw err;
+        }
+        return data;
+      };
+      if (options.retry === false) return runRequest();
+      return retryProtectedRequest(options.label || url, runRequest, { onRetry: options.onRetry });
     }
     function isOzonRateLimitError(error) {
       let bodyText = '';
@@ -1231,36 +1238,44 @@
       const text = `${error && error.message || ''} ${bodyText}`;
       return /rate limit|too many requests|request rate limit|429|limit per second/i.test(text);
     }
-    function isRetryableExportRequestError(error) {
+    function isRetryableApiRequestError(error) {
       if (isOzonRateLimitError(error)) return true;
       let bodyText = '';
       try { bodyText = error && error.body ? JSON.stringify(error.body) : ''; } catch (e) {}
       const text = `${error && error.message || ''} ${bodyText}`;
-      return /temporarily|temporary|timeout|timed out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|HTTP 50[234]|502|503|504/i.test(text);
+      return /temporarily|temporary|timeout|timed out|network|fetch failed|Failed to fetch|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|HTTP 50[234]|502|503|504|Service Unavailable|Gateway/i.test(text);
     }
-    function describeExportRequestError(error) {
+    function describeApiRequestError(error) {
       return String((error && error.message) || error || '请求失败').slice(0, 240);
     }
-    async function retryExportRequest(label, requestFn) {
+    async function retryProtectedRequest(label, requestFn, options = {}) {
       let retryCount = 0;
+      const onRetry = typeof options.onRetry === 'function' ? options.onRetry : null;
       while (true) {
         try {
           return await requestFn();
         } catch (error) {
-          if (!isRetryableExportRequestError(error)) throw error;
+          if (!isRetryableApiRequestError(error)) throw error;
           retryCount++;
-          setExportProgress(`${label || '请求'} 暂时失败：${describeExportRequestError(error)}\n等待 1.5 秒后自动重新请求（第 ${retryCount} 次），导出不会中断。`);
-          await sleep(EXPORT_RETRY_DELAY_MS);
+          if (onRetry) onRetry({ label, retryCount, error, delayMs: API_RETRY_DELAY_MS });
+          await sleep(API_RETRY_DELAY_MS);
         }
       }
     }
+    async function retryExportRequest(label, requestFn) {
+      return retryProtectedRequest(label, requestFn, {
+        onRetry: ({ label, retryCount, error }) => {
+          setExportProgress(`${label || '请求'} 暂时失败：${describeApiRequestError(error)}\n等待 1.5 秒后自动重新请求（第 ${retryCount} 次），导出不会中断。`);
+        }
+      });
+    }
     async function exportOzonRequest(endpoint, body, storeName = currentStore) {
-      return retryExportRequest(endpoint, () => ozonRequest(endpoint, body, storeName, { attempts: 1, minIntervalMs: 1500 }));
+      return retryExportRequest(endpoint, () => ozonRequest(endpoint, body, storeName));
     }
     async function exportLocalJsonRequest(url, payload) {
       return retryExportRequest('PDF 文件下载', () => localJsonRequest(url, payload));
     }
-    async function waitForOzonRequestSlot(minIntervalMs = 1200) {
+    async function waitForOzonRequestSlot(minIntervalMs = API_RETRY_DELAY_MS) {
       const now = Date.now();
       const waitMs = Math.max(0, ozonNextRequestAt - now);
       if (waitMs > 0) await sleep(waitMs);
@@ -1268,22 +1283,15 @@
     }
     async function ozonRequest(endpoint, body, storeName = currentStore, options = {}) {
       const info = requireStoreApiInfo(storeName);
-      const attempts = Math.max(1, Number(options.attempts) || 4);
-      const baseDelayMs = Math.max(500, Number(options.baseDelayMs) || 1800);
-      for (let attempt = 0; attempt < attempts; attempt++) {
-        await waitForOzonRequestSlot(Number(options.minIntervalMs) || 1200);
-        try {
-          return await localJsonRequest(OZON_PROXY_URL, {
-            endpoint,
-            body,
-            clientId: info.clientId,
-            apiKey: info.apiKey
-          });
-        } catch (error) {
-          if (!isOzonRateLimitError(error) || attempt >= attempts - 1) throw error;
-          await sleep(baseDelayMs * (attempt + 1));
-        }
-      }
+      return retryProtectedRequest(endpoint, async () => {
+        await waitForOzonRequestSlot(API_RETRY_DELAY_MS);
+        return localJsonRequest(OZON_PROXY_URL, {
+          endpoint,
+          body,
+          clientId: info.clientId,
+          apiKey: info.apiKey
+        }, { retry: false });
+      }, { onRetry: options.onRetry });
     }
     function getUpstreamBody(value) {
       if (value && typeof value === 'object' && value.body && typeof value.body === 'object') return value.body;
@@ -2169,7 +2177,7 @@
       const offerId = String(article || '').trim();
       if (!offerId) throw new Error('当前没有可同步的 SKU 货号');
       try {
-        const productResponse = await ozonRequest('/v4/product/info/stocks', buildProductInfoStocksPayload(offerId), storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+        const productResponse = await ozonRequest('/v4/product/info/stocks', buildProductInfoStocksPayload(offerId), storeName);
         const sku = extractSkuFromProductStocks(productResponse, offerId);
         if (sku) return sku;
       } catch (error) {
@@ -2185,7 +2193,7 @@
       requireStoreApiInfo(storeName);
       const sku = await resolveCurrentOzonSkuForAnalytics(offerId, storeName);
       await sleep(1100);
-      const response = await ozonRequest('/v1/analytics/stocks', buildAnalyticsStocksPayload(sku), storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+      const response = await ozonRequest('/v1/analytics/stocks', buildAnalyticsStocksPayload(sku), storeName);
       return {
         offerId,
         sku,
@@ -2196,7 +2204,7 @@
     async function fetchSellerDailyAnalyticsMap(sku, dates, storeName = currentStore) {
       const result = {};
       for (const group of groupConsecutiveDates(dates)) {
-        const response = await ozonRequest('/v1/analytics/data', buildSellerDailyAnalyticsPayload(sku, group[0], group[group.length - 1]), storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+        const response = await ozonRequest('/v1/analytics/data', buildSellerDailyAnalyticsPayload(sku, group[0], group[group.length - 1]), storeName);
         Object.assign(result, extractSellerDailyAnalyticsRows(response));
       }
       return result;
@@ -2914,14 +2922,14 @@
         if (typeof onProgress === 'function') onProgress({ stage: 'list', page, pending: pending.size });
         const listPayload = { filter: { states }, limit: 100, sort_by: 1 };
         if (lastId) listPayload.last_id = lastId;
-        const listResponse = await ozonRequest('/v3/supply-order/list', listPayload, storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+        const listResponse = await ozonRequest('/v3/supply-order/list', listPayload, storeName);
         const orderIds = getSupplyOrderListIds(listResponse);
         if (!orderIds.length) break;
 
         for (let index = 0; index < orderIds.length; index += 50) {
           const chunk = orderIds.slice(index, index + 50);
           if (typeof onProgress === 'function') onProgress({ stage: 'detail', page, pending: pending.size });
-          const detailsResponse = await ozonRequest('/v3/supply-order/get', { order_ids: chunk }, storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+          const detailsResponse = await ozonRequest('/v3/supply-order/get', { order_ids: chunk }, storeName);
           const found = mapSupplyOrderIdsInDetails(detailsResponse, pending);
           found.forEach((id, key) => {
             resolved.set(key, id);
@@ -3016,7 +3024,7 @@
     async function fetchSupplyOrderTimeslots(supplyOrderId, storeName = currentStore) {
       return ozonRequest('/v1/supply-order/timeslot/get', {
         supply_order_id: positiveSupplyId(supplyOrderId)
-      }, storeName, { attempts: 5, baseDelayMs: 2200, minIntervalMs: 1300 });
+      }, storeName);
     }
 
     async function updateSupplyOrderTimeslot(supplyOrderId, timeslot, storeName = currentStore) {
@@ -3027,7 +3035,7 @@
           from: timeslot.from,
           to: timeslot.to
         }
-      }, storeName, { attempts: 5, baseDelayMs: 2500, minIntervalMs: 1500 });
+      }, storeName);
     }
 
     async function loadSingleDateChangeAvailability(requestNo, oldDate, storeName = currentStore) {
@@ -3177,7 +3185,7 @@
     async function fillVehiclePassForSupply(orderNumber, info, storeName = currentStore, resolvedSupplyOrderId) {
       const supplyOrderId = resolvedSupplyOrderId || await resolveSupplyOrderIdFromOrderNumber(orderNumber, storeName);
       const payload = vehiclePassPayload(supplyOrderId, info);
-      const response = await ozonRequest('/v1/supply-order/pass/create', payload, storeName, { attempts: 5, baseDelayMs: 2500, minIntervalMs: 1500 });
+      const response = await ozonRequest('/v1/supply-order/pass/create', payload, storeName);
       return {
         orderNumber: String(orderNumber),
         supplyOrderId: String(supplyOrderId),

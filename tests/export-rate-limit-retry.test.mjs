@@ -45,21 +45,28 @@ function findFunctionBodyStart(source, start) {
   throw new Error('Could not locate function body');
 }
 
-assert.match(html, /const\s+EXPORT_RETRY_DELAY_MS\s*=\s*1500/, 'export retries should wait 1.5 seconds between retryable request failures');
-assert.match(html, /function\s+isRetryableExportRequestError\s*\(/, 'export should classify retryable request failures');
+assert.match(html, /const\s+API_RETRY_DELAY_MS\s*=\s*1500/, 'interface retries should wait 1.5 seconds between retryable request failures');
+assert.match(html, /const\s+EXPORT_RETRY_DELAY_MS\s*=\s*API_RETRY_DELAY_MS/, 'export retries should use the shared API retry delay');
+assert.match(html, /function\s+isRetryableApiRequestError\s*\(/, 'export should share retryable request classification');
+assert.match(html, /async\s+function\s+retryProtectedRequest\s*\(/, 'export should share retry protection');
 assert.match(html, /async\s+function\s+retryExportRequest\s*\(/, 'export should have a retry wrapper that does not abort on rate limit');
 assert.match(html, /async\s+function\s+exportOzonRequest\s*\(/, 'export Ozon calls should use the retry wrapper');
 assert.match(html, /async\s+function\s+exportLocalJsonRequest\s*\(/, 'export PDF download calls through local proxy should also be retryable');
 
 const retryExportRequestSource = extractAsyncFunctionSource(html, 'retryExportRequest');
-assert.match(retryExportRequestSource, /while\s*\(\s*true\s*\)/, 'retryable export request failures should keep retrying instead of aborting the export');
-assert.match(retryExportRequestSource, /isRetryableExportRequestError\s*\(\s*error\s*\)/, 'retry wrapper should only continue for retryable request failures');
-assert.match(retryExportRequestSource, /await\s+sleep\s*\(\s*EXPORT_RETRY_DELAY_MS\s*\)/, 'retry wrapper should wait the configured 1.5 seconds before retrying');
-assert.match(retryExportRequestSource, /throw\s+error/, 'non-retryable business errors should still stop the export');
+assert.match(retryExportRequestSource, /retryProtectedRequest\s*\(/, 'export retry wrapper should use shared retry protection');
+assert.match(retryExportRequestSource, /setExportProgress\s*\(/, 'export retry wrapper should show retry progress');
+assert.match(retryExportRequestSource, /describeApiRequestError\s*\(\s*error\s*\)/, 'export progress should describe retryable request failures');
+
+const retryProtectedRequestSource = extractAsyncFunctionSource(html, 'retryProtectedRequest');
+assert.match(retryProtectedRequestSource, /while\s*\(\s*true\s*\)/, 'retryable request failures should keep retrying instead of aborting the export');
+assert.match(retryProtectedRequestSource, /isRetryableApiRequestError\s*\(\s*error\s*\)/, 'shared retry wrapper should only continue for retryable request failures');
+assert.match(retryProtectedRequestSource, /await\s+sleep\s*\(\s*API_RETRY_DELAY_MS\s*\)/, 'shared retry wrapper should wait the configured 1.5 seconds before retrying');
+assert.match(retryProtectedRequestSource, /throw\s+error/, 'non-retryable business errors should still stop the export');
 
 const exportOzonRequestSource = extractAsyncFunctionSource(html, 'exportOzonRequest');
 assert.match(exportOzonRequestSource, /retryExportRequest\s*\(/, 'export Ozon requests should run through retryExportRequest');
-assert.match(exportOzonRequestSource, /attempts:\s*1/, 'export retry wrapper should own retry timing instead of nesting ozonRequest retries');
+assert.doesNotMatch(exportOzonRequestSource, /attempts:\s*1/, 'export retry wrapper should no longer pass fixed attempt limits');
 
 const readSupplyContextSource = extractAsyncFunctionSource(html, 'readSupplyContext');
 assert.match(readSupplyContextSource, /options\s*=\s*\{\}/, 'supply context reader should accept an export request override');
