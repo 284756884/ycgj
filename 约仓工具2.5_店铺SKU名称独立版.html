@@ -1181,6 +1181,44 @@
       const match = requestMatches(requestNo);
       return `<span class="request-no-copy ${match ? 'request-match' : ''}" data-request-no="${escapeHtml(requestNo)}" title="双击复制申请号">[${escapeHtml(requestNo)}]</span>`;
     }
+    function splitShipRequestNos(value) {
+      return String(value || '')
+        .split(/[,\uff0c;；\s]+/)
+        .map(item => item.trim())
+        .filter(Boolean);
+    }
+    function findDuplicateShipRequestRows(rows, dataKey = getCurrentDataKey()) {
+      const duplicates = [];
+      const existingByRequest = new Map();
+      REGION_ORDER.forEach(region => {
+        const data = getSkuData(region, dataKey);
+        (data.pendingShipments || []).forEach(item => {
+          splitShipRequestNos(item.requestNo).forEach(requestNo => {
+            if (!existingByRequest.has(requestNo)) existingByRequest.set(requestNo, { existingRegion: region, source: 'pending' });
+          });
+        });
+        (data.events || []).forEach(item => {
+          if (!item || (item.type !== 'ship' && item.type !== 'batch_ship')) return;
+          splitShipRequestNos(item.requestNo).forEach(requestNo => {
+            if (!existingByRequest.has(requestNo)) existingByRequest.set(requestNo, { existingRegion: region, source: 'history' });
+          });
+        });
+      });
+      const inputByRequest = new Map();
+      (rows || []).forEach(row => {
+        if (!row || !row.region) return;
+        splitShipRequestNos(row.requestNo).forEach(requestNo => {
+          const existing = existingByRequest.get(requestNo) || inputByRequest.get(requestNo);
+          if (existing) duplicates.push({ region: row.region, requestNo, existingRegion: existing.existingRegion || existing.region || row.region });
+          if (!inputByRequest.has(requestNo)) inputByRequest.set(requestNo, { existingRegion: row.region, source: 'input' });
+        });
+      });
+      return duplicates;
+    }
+    function formatDuplicateShipRequestError(duplicates) {
+      const rows = (duplicates || []).map(item => `地区：${item.region || '-'}，交货申请号码：${item.requestNo || '-'}，已存在地区：${item.existingRegion || item.region || '-'}`);
+      return `交货申请号重复，不能重复录入。\n${rows.join('\n')}`;
+    }
     function copyText(text) {
       if (navigator.clipboard && window.isSecureContext) {
         return navigator.clipboard.writeText(text);
@@ -2455,6 +2493,8 @@
           const reqInput = document.getElementById('req-'+r.replace(/\s/g,''));
           const reqNo = reqInput ? reqInput.value.trim() : '';
           const date = document.getElementById('batchDateShip').value || new Date().toISOString().slice(0,10);
+          const duplicates = findDuplicateShipRequestRows([{ region: r, requestNo: reqNo }], art);
+          if (duplicates.length) { alert(formatDuplicateShipRequestError(duplicates)); return; }
           getSkuData(r,art).pendingShipments.push({ id: Date.now(), date, qty, requestNo: reqNo });
           // 清空输入框
           document.getElementById('inv-'+r.replace(/\s/g,'')).value = '';
@@ -3675,15 +3715,21 @@
 
     document.getElementById('batchShipAllBtn').onclick = () => {
       const date = document.getElementById('batchDateShip').value; if(!date) { alert('请选择日期'); return; }
+      const batchShipRows = [];
       REGION_ORDER.forEach(r => {
         const qty = parseInt(document.getElementById('inv-'+r.replace(/\s/g,'')).value);
         if (qty > 0) {
           const reqInput = document.getElementById('req-'+r.replace(/\s/g,''));
           const reqNo = reqInput ? reqInput.value.trim() : '';
-          getSkuData(r, getCurrentDataKey()).pendingShipments.push({ id: Date.now() + Math.random(), date, qty, requestNo: reqNo });
-          document.getElementById('inv-'+r.replace(/\s/g,'')).value = '';
-          if(reqInput) reqInput.value = '';
+          batchShipRows.push({ region: r, qty, requestNo: reqNo, reqInput });
         }
+      });
+      const duplicates = findDuplicateShipRequestRows(batchShipRows, getCurrentDataKey());
+      if (duplicates.length) { alert(formatDuplicateShipRequestError(duplicates)); return; }
+      batchShipRows.forEach(row => {
+        getSkuData(row.region, getCurrentDataKey()).pendingShipments.push({ id: Date.now() + Math.random(), date, qty: row.qty, requestNo: row.requestNo });
+        document.getElementById('inv-'+row.region.replace(/\s/g,'')).value = '';
+        if(row.reqInput) row.reqInput.value = '';
       });
       persist(); renderAll();
     };
