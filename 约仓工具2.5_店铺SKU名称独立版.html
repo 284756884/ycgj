@@ -2748,7 +2748,7 @@
         row+=`<td><button class="btn-xs danger undo-date" data-date="${date}">撤回</button></td></tr>`;
         return row;
       }).join('');
-      document.querySelectorAll('.undo-date').forEach(b=>{ b.onclick=()=>{ const date=b.dataset.date; if(!confirm(`撤回 ${date} 所有已完成送仓，并回填到上方输入框？`))return; const restoreItems=[]; REGION_ORDER.forEach(r=>{ const d=getSkuData(r,art); d.events=d.events.filter(e=>{ const ed=e.date||new Date(e.time).toISOString().slice(0,10); if((e.type==='ship'||e.type==='batch_ship')&&ed===date){ restoreItems.push({ region:r, qty:e.value, requestNo:e.requestNo||'' }); return false; } return true; }); }); if(!restoreItems.length){ alert('该日期没有可撤回的已完成记录'); return; } queueInputRestore(restoreItems); highlightedRegion=restoreItems[0].region; persist(); renderAll(); }; });
+      document.querySelectorAll('.undo-date').forEach(b=>{ b.onclick=()=>{ const date=b.dataset.date; if(!confirm(`撤回 ${date} 所有已完成送仓，并退回当前待送仓？`))return; const restoreItems=[]; REGION_ORDER.forEach(r=>{ const d=getSkuData(r,art); d.events=d.events.filter(e=>{ const ed=e.date||new Date(e.time).toISOString().slice(0,10); if((e.type==='ship'||e.type==='batch_ship')&&ed===date){ d.pendingShipments.push({ id: Date.now() + Math.random(), date: ed, qty: e.value, requestNo: e.requestNo||'' }); restoreItems.push({ region:r, qty:e.value, requestNo:e.requestNo||'' }); return false; } return true; }); }); if(!restoreItems.length){ alert('该日期没有可撤回的已完成记录'); return; } highlightedRegion=restoreItems[0].region; persist(); renderAll(); }; });
       bindRequestCopyHandlers();
       updateTodayTotal();
     }
@@ -2763,7 +2763,7 @@
         let t = e.type==='manual'?'手动更新':e.type==='ship'?'送仓完成':'批量完成';
         return `<tr><td>${new Date(e.time).toLocaleString()}</td><td>${e.region}</td><td>${t}</td><td>${e.value}</td><td><button class="btn-xs danger undo-event" data-region="${e.region}" data-idx="${e.idx}">撤回</button></td></tr>`;
       }).join('');
-      document.querySelectorAll('.undo-event').forEach(b=>{ b.onclick=()=>{ const r=b.dataset.region; const idx=parseInt(b.dataset.idx); const d=getSkuData(r,art); const e=d.events[idx]; if(!e) return; if((e.type==='ship'||e.type==='batch_ship') && e.value){ queueInputRestore([{ region:r, qty:e.value, requestNo:e.requestNo||'' }]); highlightedRegion=r; } d.events.splice(idx,1); persist(); renderAll(); }; });
+      document.querySelectorAll('.undo-event').forEach(b=>{ b.onclick=()=>{ const r=b.dataset.region; const idx=parseInt(b.dataset.idx); const d=getSkuData(r,art); const e=d.events[idx]; if(!e) return; if((e.type==='ship'||e.type==='batch_ship') && e.value){ d.pendingShipments.push({ id: Date.now() + Math.random(), date: (e.date||new Date(e.time).toISOString().slice(0,10)), qty: e.value, requestNo: e.requestNo||'' }); highlightedRegion=r; } d.events.splice(idx,1); persist(); renderAll(); }; });
     }
 
     function updateTodayTotal() {
