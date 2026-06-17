@@ -82,6 +82,6 @@ assert.match(downloadCargoLabelPdfSource, /localRequest\s*\(/, 'PDF file downloa
 
 const exportDateWithOzonSource = extractAsyncFunctionSource(html, 'exportDateWithOzon');
 assert.match(exportDateWithOzonSource, /smartSyncSupply\s*\(\s*row\.requestNo\s*,\s*boxQty\s*,\s*currentStore\s*,\s*row\.qty\s*,\s*\{\s*request:\s*exportOzonRequest\s*\}\s*\)/, 'batch export box sync should use retryable Ozon requests');
-assert.match(exportDateWithOzonSource, /downloadCargoLabelPdf\s*\(\s*row\.requestNo\s*,\s*directory\s*,\s*currentStore\s*,\s*\{\s*request:\s*exportOzonRequest\s*,\s*localRequest:\s*exportLocalJsonRequest\s*\}\s*\)/, 'batch export PDF download should use retryable Ozon and local requests');
+assert.match(exportDateWithOzonSource, /downloadCargoLabelPdf\s*\(\s*row\.requestNo\s*,\s*directory\s*,\s*currentStore\s*,\s*\{\s*request:\s*exportOzonRequest\s*,\s*localRequest:\s*exportLocalJsonRequest\s*,\s*skuArticle:\s*currentSKU\.article\s*\}\s*\)/, 'batch export PDF download should use retryable Ozon and local requests');
 
 console.log('export rate limit retry hooks are present');

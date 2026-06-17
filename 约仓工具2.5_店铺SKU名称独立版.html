@@ -1482,6 +1482,20 @@
         .replace(/[. ]+$/g, '');
       return cleaned || 'SKU';
     }
+    function sanitizePathSegment(value) {
+      const cleaned = String(value || '')
+        .trim()
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, ' ')
+        .replace(/[. ]+$/g, '')
+        .slice(0, 80);
+      return cleaned || 'SKU';
+    }
+    function buildPdfSkuDirectory(baseDir, skuArticle) {
+      const cleanBase = String(baseDir || '').trim().replace(/[\\/]+$/, '');
+      const folder = sanitizePathSegment(skuArticle);
+      return `${cleanBase}\\${folder}`;
+    }
     function buildWorkbookFilename(skuArticle, storeName, date) {
       return `${safeWorkbookFilenamePart(skuArticle)}-${safeWorkbookFilenamePart(storeName)}-${safeWorkbookFilenamePart(date)}.xlsx`;
     }
@@ -2036,6 +2050,8 @@
       const request = options.request || ozonRequest;
       const localRequest = options.localRequest || localJsonRequest;
       const info = requireStoreApiInfo(storeName);
+      const skuArticle = options.skuArticle || currentSKU.article;
+      const pdfDirectory = buildPdfSkuDirectory(directory, skuArticle);
       const supplyNumber = positiveSupplyId(supplyId);
       const createResponse = await request('/v1/cargoes-label/create', { supply_id: supplyNumber }, storeName);
       let fileUrl = extractCargoLabelUrl(createResponse);
@@ -2052,7 +2068,7 @@
       if (!fileUrl) throw new Error(`申请 ${supplyId} 的 PDF 标签暂未生成完成。`);
       return localRequest(OZON_DOWNLOAD_PDF_URL, {
         url: fileUrl,
-        directory,
+        directory: pdfDirectory,
         filename: `${supplyId}.pdf`,
         clientId: info.clientId,
         apiKey: info.apiKey
@@ -3383,9 +3399,10 @@
         XLSX.writeFile(wb, filename);
         return { ok: true, path: filename, browserDownload: true };
       }
+      const workbookDirectory = buildPdfSkuDirectory(directory, skuArticle);
       const base64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
       return localJsonRequest(OZON_SAVE_FILE_URL, {
-        directory,
+        directory: workbookDirectory,
         filename,
         base64
       });
@@ -3458,14 +3475,15 @@
 
       if (mode === 'pdf') {
         if (!confirm(`将导出选中的 ${rows.length} 个交货申请 PDF 标签。确认继续？`)) return;
+        const pdfDirectory = buildPdfSkuDirectory(directory, currentSKU.article);
         setExportBusy(true);
         try {
           for (let index = 0; index < rows.length; index++) {
             const row = rows[index];
             setExportProgress(`(${index + 1}/${rows.length}) 正在下载 PDF 标签 ${row.requestNo}.pdf ...`);
-            await downloadCargoLabelPdf(row.requestNo, directory, currentStore, { request: exportOzonRequest, localRequest: exportLocalJsonRequest });
+            await downloadCargoLabelPdf(row.requestNo, directory, currentStore, { request: exportOzonRequest, localRequest: exportLocalJsonRequest, skuArticle: currentSKU.article });
           }
-          setExportProgress(`完成。\nPDF：已按申请号保存到 ${directory}\n已导出申请：${rows.length} 个`);
+          setExportProgress(`完成。\nPDF：已按申请号保存到 ${pdfDirectory}\n已导出申请：${rows.length} 个`);
           showCopyToast('PDF 导出完成');
         } catch (error) {
           setExportProgress(`失败：${error.message}`);
