@@ -67,7 +67,7 @@ function extractFunctionSource(source, name) {
 
 const syncStoresSource = extractFunctionSource(html, 'syncStores');
 const syncCurrentSkuAnalyticsSource = extractFunctionSource(html, 'syncCurrentSkuAnalytics');
-const applyAnalyticsSummarySource = extractFunctionSource(html, 'applyAnalyticsSummaryToCurrentSku');
+const applyAnalyticsSummarySource = extractFunctionSource(html, 'applyAnalyticsSummaryToSku');
 const syncDailyAnalyticsForDatesSource = extractFunctionSource(html, 'syncDailyAnalyticsForDates');
 const syncMissingDailyAnalyticsSource = extractFunctionSource(html, 'syncMissingDailyAnalytics');
 
@@ -97,6 +97,7 @@ assert.doesNotMatch(syncCurrentSkuAnalyticsSource, /requireStorePerformanceInfo|
 assert.match(applyAnalyticsSummarySource, /const\s+monthlyValue\s*=\s*Math\.max\s*\(\s*0\s*,\s*Math\.round\s*\(\s*toFiniteNumber\s*\(\s*row\.monthlySales28Days\s*\)\s*\)\s*\)/, 'monthly sales sync should normalize each regional monthly value');
 assert.match(applyAnalyticsSummarySource, /getSkuData\s*\(\s*row\.region\s*,\s*art\s*\)\.monthlySales\s*=\s*monthlyValue/, 'monthly sales sync should update each region monthly value');
 assert.match(applyAnalyticsSummarySource, /applyMonthlySalesInputValue\s*\(\s*document\s*,\s*row\.region\s*,\s*monthlyValue\s*\)/, 'monthly sales sync should update the visible region monthly input boxes');
+assert.match(applyAnalyticsSummarySource, /getDataKey\s*\(\s*article\s*,\s*storeName\s*\)/, 'monthly sales sync should be able to write a specific store/SKU');
 assert.match(html, /monthlySummarySalesMap/, 'monthly sales sync needs a per SKU summary value cache');
 assert.doesNotMatch(syncDailyAnalyticsForDatesSource, /requireStorePerformanceInfo|fetchPerformanceSpendMap|resolveCurrentPerformanceCampaignIds/, 'daily sales sync must only use Seller analytics data');
 assert.match(syncMissingDailyAnalyticsSource, /filterSyncableDailyAnalyticsDates\s*\(/, 'syncMissingDailyAnalytics must avoid future dates rejected by date_to validation');

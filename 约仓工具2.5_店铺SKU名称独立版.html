@@ -221,6 +221,7 @@
       <button id="clearSearchBtn" class="btn btn-outline">✕</button>
     </div>
     <button id="manageRegionsBtn" class="btn btn-outline">🌍 地区</button>
+    <button id="syncAllStoresSkusBtn" class="btn btn-info" title="一键同步所有店铺所有SKU的库存和近28天销量">🔄 全店SKU同步</button>
     <div class="sku-toolbar">
       <span class="store-label">商店</span>
       <select id="storeSelect" title="选择商店"></select>
@@ -2241,8 +2242,8 @@
       throw new Error(`货号 ${offerId} 没有解析到 Ozon SKU`);
     }
 
-    async function fetchCurrentAnalyticsStockSummary(storeName = currentStore) {
-      const offerId = currentSKU && currentSKU.article ? currentSKU.article : '';
+    async function fetchSkuAnalyticsStockSummary(article, storeName = currentStore) {
+      const offerId = String(article || '').trim();
       if (!offerId) throw new Error('当前店铺没有选中的 SKU');
       requireStoreApiInfo(storeName);
       const sku = await resolveCurrentOzonSkuForAnalytics(offerId, storeName);
@@ -2253,6 +2254,9 @@
         sku,
         ...summarizeAnalyticsStocksByRegion(response, REGION_ORDER, regionClusterMap)
       };
+    }
+    async function fetchCurrentAnalyticsStockSummary(storeName = currentStore) {
+      return fetchSkuAnalyticsStockSummary(currentSKU && currentSKU.article, storeName);
     }
 
     async function fetchSellerDailyAnalyticsMap(sku, dates, storeName = currentStore) {
@@ -2337,8 +2341,8 @@
       });
     }
 
-    function applyAnalyticsSummaryToCurrentSku(summary, mode) {
-      const art = getCurrentDataKey();
+    function applyAnalyticsSummaryToSku(summary, mode, storeName = currentStore, article = currentSKU && currentSKU.article) {
+      const art = getDataKey(article, storeName);
       const rows = Array.isArray(summary && summary.applied) ? summary.applied : [];
       const now = new Date().toISOString();
       let count = 0;
@@ -2350,13 +2354,16 @@
         } else {
           const monthlyValue = Math.max(0, Math.round(toFiniteNumber(row.monthlySales28Days)));
           getSkuData(row.region, art).monthlySales = monthlyValue;
-          applyMonthlySalesInputValue(document, row.region, monthlyValue);
+          if (art === getCurrentDataKey()) applyMonthlySalesInputValue(document, row.region, monthlyValue);
           monthlySummaryTotal += monthlyValue;
         }
         count++;
       });
       if (mode !== 'inventory' && count) setMonthlySummarySales(art, monthlySummaryTotal);
       return count;
+    }
+    function applyAnalyticsSummaryToCurrentSku(summary, mode) {
+      return applyAnalyticsSummaryToSku(summary, mode, currentStore, currentSKU && currentSKU.article);
     }
 
     async function syncCurrentSkuAnalytics(mode) {
@@ -2408,6 +2415,89 @@
         alert(`${label}同步失败：${error.message || error}`);
       } finally {
         setSummarySyncBusy(false);
+      }
+    }
+
+    function getAllStoreSkuSyncTargets() {
+      syncStores();
+      const targets = [];
+      const seen = new Set();
+      (storeList || []).forEach(store => {
+        getSkuObjectsForStore(store).forEach(sku => {
+          const article = String(sku.article || '').trim();
+          if (!article) return;
+          const key = `${store}\n${article}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          targets.push({ store, article, name: sku.name || article });
+        });
+      });
+      return targets;
+    }
+
+    function setAllStoresSkusSyncBusy(isBusy, text) {
+      const btn = document.getElementById('syncAllStoresSkusBtn');
+      if (btn) {
+        btn.disabled = isBusy;
+        btn.textContent = isBusy ? (text || '同步中...') : '🔄 全店SKU同步';
+      }
+      setSummarySyncBusy(isBusy);
+    }
+
+    async function syncOneStoreSkuAnalyticsWithRetry(target, rollingDates, onRetry) {
+      let retryCount = 0;
+      while (true) {
+        try {
+          const summary = await fetchSkuAnalyticsStockSummary(target.article, target.store);
+          const inventoryCount = applyAnalyticsSummaryToSku(summary, 'inventory', target.store, target.article);
+          const monthlyCount = applyAnalyticsSummaryToSku(summary, 'monthlySales', target.store, target.article);
+          const dailyCount = await syncMissingDailyAnalytics(rollingDates, target.store, target.article);
+          return { inventoryCount, monthlyCount, dailyCount };
+        } catch (error) {
+          if (!isRetryableApiRequestError(error)) throw error;
+          retryCount++;
+          if (typeof onRetry === 'function') onRetry({ target, retryCount, error, delayMs: API_RETRY_DELAY_MS });
+          await sleep(API_RETRY_DELAY_MS);
+        }
+      }
+    }
+
+    async function syncAllStoresSkusAnalytics() {
+      const targets = getAllStoreSkuSyncTargets();
+      if (!targets.length) { alert('没有可同步的店铺 SKU'); return; }
+      const rollingDates = getRollingDailyAnalyticsDates(28);
+      const failures = [];
+      let successCount = 0;
+      let inventoryRegionCount = 0;
+      let monthlyRegionCount = 0;
+      let dailySyncCount = 0;
+      setAllStoresSkusSyncBusy(true, `同步 0/${targets.length}`);
+      try {
+        for (let index = 0; index < targets.length; index++) {
+          const target = targets[index];
+          setAllStoresSkusSyncBusy(true, `同步 ${index + 1}/${targets.length}`);
+          try {
+            const result = await syncOneStoreSkuAnalyticsWithRetry(target, rollingDates, ({ target, retryCount }) => {
+              setAllStoresSkusSyncBusy(true, `等待重试 ${index + 1}/${targets.length} ${target.store}/${target.article} 第${retryCount}次`);
+            });
+            inventoryRegionCount += result.inventoryCount;
+            monthlyRegionCount += result.monthlyCount;
+            dailySyncCount += result.dailyCount;
+            successCount++;
+          } catch (error) {
+            failures.push({ target, message: error.message || String(error) });
+          }
+        }
+        persist();
+        renderAll();
+        showCopyToast(`全店SKU同步完成：成功 ${successCount}/${targets.length}`);
+        if (failures.length) {
+          alert(`全店SKU同步完成，失败 ${failures.length} 个：\n${failures.slice(0, 12).map(item => `${item.target.store} / ${item.target.article}：${item.message}`).join('\n')}${failures.length > 12 ? '\n...' : ''}`);
+        } else {
+          alert(`全店SKU同步完成。\nSKU：${successCount} 个\n库存地区：${inventoryRegionCount}\n月销量地区：${monthlyRegionCount}\n每日销量日期：${dailySyncCount}`);
+        }
+      } finally {
+        setAllStoresSkusSyncBusy(false);
       }
     }
 
@@ -3730,6 +3820,7 @@
     document.getElementById('importRegionMappingBtn').onclick = importRegionMapping;
     document.getElementById('closeRegionModalBtn').onclick = () => document.getElementById('regionModal').style.display = 'none';
     document.getElementById('manageRegionsBtn').onclick = openRegionManager;
+    document.getElementById('syncAllStoresSkusBtn').onclick = () => syncAllStoresSkusAnalytics();
 
     document.getElementById('batchShipAllBtn').onclick = () => {
       const date = document.getElementById('batchDateShip').value; if(!date) { alert('请选择日期'); return; }
