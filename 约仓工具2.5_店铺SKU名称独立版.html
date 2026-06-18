@@ -95,12 +95,32 @@
     .record-table { font-size: 0.6rem; width: max-content; min-width: 100%; border-collapse: collapse; }
     .record-table th, .record-table td { padding: 0.15rem 0.25rem; min-width: 65px; border: 1px solid #d1d5db; text-align: center; }
     .record-table th { background: #eef2ff; position: sticky; top: 0; }
+    .all-sku-sales-report-btn { background: #4f46e5; border-color: #4f46e5; color: white; padding: 0.22rem 0.7rem; font-size: 0.65rem; }
+    .all-sku-sales-report-modal { width: 96%; max-width: 1180px !important; max-height: 90vh; padding: 1.25rem; }
+    .all-sku-sales-report-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.35rem; }
+    .all-sku-sales-report-modal h3 { font-size: 1.25rem; margin-bottom: 0.35rem; color: #0f172a; }
+    .all-sku-sales-report-sync-btn { min-width: 150px; justify-content: center; height: 34px; font-size: 0.78rem; }
+    .all-sku-sales-report-note { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.55rem; color: #475569; font-size: 0.78rem; }
+    .all-sku-sales-report-note span { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 0.25rem 0.65rem; }
+    .all-sku-sales-report-filters { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.65rem; padding: 0.45rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.65rem; }
+    .all-sku-sales-report-filter-btn { height: 30px; padding: 0.25rem 0.75rem; border-radius: 999px; border: 1px solid #cbd5e1; background: white; color: #334155; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+    .all-sku-sales-report-filter-btn.active { background: #4f46e5; border-color: #4f46e5; color: white; }
+    .all-sku-sales-report-wrap { max-height: 68vh; margin-top: 0.8rem; border: 1px solid #cbd5e1; border-radius: 0.65rem; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); background: white; }
+    .all-sku-sales-report-table { width: 100%; min-width: 760px; font-size: 0.82rem; }
+    .all-sku-sales-report-table th, .all-sku-sales-report-table td { padding: 0.55rem 0.65rem; min-width: 120px; border-color: #e2e8f0; }
+    .all-sku-sales-report-table th { background: #e0e7ff; color: #1e1b4b; font-size: 0.78rem; z-index: 3; }
+    .all-sku-sales-report-table tbody tr:nth-child(even) td { background: #f8fafc; }
+    .all-sku-sales-report-table tbody tr:hover td { background: #eef2ff; }
+    .all-sku-name-cell { text-align: left !important; min-width: 260px !important; font-weight: 700; color: #0f172a; }
+    .all-sku-number-cell { font-variant-numeric: tabular-nums; font-weight: 700; color: #334155; }
+    .all-sku-number-cell.primary { color: #3730a3; font-size: 0.95rem; }
     #shipStatusTable th, #shipStatusTable td { min-width: 98px; }
     #shipStatusTable .ship-sticky-date { position: sticky; left: 0; min-width: 82px; width: 82px; z-index: 4; background: #ffffff; box-shadow: 2px 0 0 #d1d5db; }
     #shipStatusTable .ship-sticky-total { position: sticky; left: 82px; min-width: 64px; width: 64px; z-index: 4; background: #f8fafc; box-shadow: 2px 0 0 #d1d5db; }
     #shipStatusTable .ship-sticky-actions { position: sticky; right: 0; min-width: 240px; width: 240px; z-index: 4; background: #ffffff; box-shadow: -2px 0 0 #d1d5db; }
     #shipStatusTable th.ship-sticky-date, #shipStatusTable th.ship-sticky-total, #shipStatusTable th.ship-sticky-actions { z-index: 6; background: #eef2ff; }
     .btn-xs { padding: 0.15rem 0.4rem; font-size: 0.55rem; border-radius: 0.8rem; border: 1px solid #cbd5e1; background: white; cursor: pointer; font-weight: 500; }
+    .btn-xs.all-sku-sales-report-btn { background: #4f46e5; border-color: #4f46e5; color: white; padding: 0.22rem 0.7rem; font-size: 0.65rem; }
     .btn-xs.danger { background: #ef4444; color: white; border: none; }
     .btn-xs.info { background: #6366f1; color: white; border: none; }
     .btn-xs.calendar { background: #e0e7ff; color: #4338ca; border: none; }
@@ -286,6 +306,7 @@
     <span id="lastSavedLabel">上次保存: 尚未保存</span>
     <span>💾 键: wh_v6.9 | 导入/导出JSON</span>
     <button id="openEventLogBtn" class="btn btn-outline btn-xs">📜 库存记录</button>
+    <button id="allSkuSalesReportBtn" class="btn btn-info btn-xs all-sku-sales-report-btn">整体数据</button>
     <button id="exportDataBtn" class="btn btn-outline btn-xs">📤 导出</button>
     <button id="importDataBtn" class="btn btn-outline btn-xs">📥 导入</button>
   </div>
@@ -506,6 +527,33 @@
   </div>
 </div>
 
+<div class="modal" id="allSkuSalesReportModal">
+  <div class="modal-content all-sku-sales-report-modal">
+    <div class="all-sku-sales-report-header">
+      <h3>整体数据</h3>
+      <button id="syncAllSkuSalesReportBtn" class="btn btn-info all-sku-sales-report-sync-btn">同步所有SKU数据</button>
+    </div>
+    <div style="font-size:0.82rem; color:#64748b; margin-top:0.35rem; line-height:1.6;">
+      数据来自已同步的每日销量缓存，7日和28日日均销量均从昨天起往前计算。
+    </div>
+    <div class="all-sku-sales-report-note">
+      <span>默认按28日日均销量降序</span>
+      <span>库存汇总所有店铺</span>
+      <span>销量使用本地同步缓存</span>
+    </div>
+    <div class="all-sku-sales-report-filters" id="allSkuSalesReportStoreFilters"></div>
+    <div class="panel-content all-sku-sales-report-wrap">
+      <table class="record-table all-sku-sales-report-table" id="allSkuSalesReportTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="modal-buttons">
+      <button id="closeAllSkuSalesReportBtn" class="btn btn-outline">关闭</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="boxModal">
   <div class="modal-content" style="max-width: 560px;">
     <h3>📦 导出</h3>
@@ -679,6 +727,8 @@
     let currentDailyAnalyticsMonth = new Date();
     let highlightedRegion = null;
     let lastUnmappedClusters = [];
+    const ALL_SKU_SALES_REPORT_ALL_STORES = '__ALL__';
+    let currentAllSkuSalesReportStore = ALL_SKU_SALES_REPORT_ALL_STORES;
 
     function getDataKey(article = currentSKU.article, store = currentStore) {
       if (!article) return '';
@@ -1740,6 +1790,108 @@
         return sum + Math.round(Number(row && row.orderedUnits || 0));
       }, 0);
     }
+    function getPreviousNDates(count, baseDate = new Date()) {
+      const base = new Date(baseDate);
+      base.setDate(base.getDate() - 1);
+      return Array.from({ length: count }, (_, index) => {
+        const d = new Date(base);
+        d.setDate(base.getDate() - index);
+        return formatDateYmd(d);
+      }).reverse();
+    }
+    function buildAllSkuSalesReportRows(baseDate = new Date(), selectedStore = ALL_SKU_SALES_REPORT_ALL_STORES) {
+      syncStores();
+      const yesterdayDates = getPreviousNDates(1, baseDate);
+      const sevenDates = getPreviousNDates(7, baseDate);
+      const twentyEightDates = getPreviousNDates(28, baseDate);
+      const rowsByArticle = new Map();
+      const stores = selectedStore && selectedStore !== ALL_SKU_SALES_REPORT_ALL_STORES ? [selectedStore] : (storeList || []);
+      stores.forEach(store => {
+        getSkuObjectsForStore(store).forEach(sku => {
+          const article = String(sku.article || '').trim();
+          if (!article) return;
+          if (!rowsByArticle.has(article)) {
+            rowsByArticle.set(article, {
+              article,
+              name: getStoreSkuName(store, article) || sku.name || article,
+              totalInventory: 0,
+              yesterdaySales: 0,
+              total7Days: 0,
+              total28Days: 0,
+              stores: new Set()
+            });
+          }
+          const row = rowsByArticle.get(article);
+          row.stores.add(store);
+          if ((!row.name || row.name === row.article) && (getStoreSkuName(store, article) || sku.name)) {
+            row.name = getStoreSkuName(store, article) || sku.name || article;
+          }
+          const dataKey = getDataKey(article, store);
+          REGION_ORDER.forEach(region => {
+            row.totalInventory += getInventory(region, dataKey);
+          });
+          row.yesterdaySales += getDailyAnalyticsSalesTotal(yesterdayDates, store, article);
+          row.total7Days += getDailyAnalyticsSalesTotal(sevenDates, store, article);
+          row.total28Days += getDailyAnalyticsSalesTotal(twentyEightDates, store, article);
+        });
+      });
+      return Array.from(rowsByArticle.values()).map(row => ({
+        article: row.article,
+        name: row.name || row.article,
+        totalInventory: row.totalInventory,
+        yesterdaySales: row.yesterdaySales,
+        average7Days: Math.round((row.total7Days / 7) * 10) / 10,
+        average28Days: Math.round((row.total28Days / 28) * 10) / 10,
+        stores: Array.from(row.stores),
+        storeCount: row.stores.size
+      }));
+    }
+    function formatSalesAverage(value) {
+      const number = Number(value || 0);
+      return Number.isInteger(number) ? String(number) : number.toFixed(1);
+    }
+    function formatAllSkuNameWithArticle(row) {
+      return `${escapeHtml(row.name || row.article)}（${escapeHtml(row.article)}）`;
+    }
+    function getAllSkuSalesReportStores() {
+      syncStores();
+      return (storeList || []).filter(store => getSkuObjectsForStore(store).length);
+    }
+    function renderAllSkuSalesReport() {
+      const table = document.getElementById('allSkuSalesReportTable');
+      if (!table) return;
+      renderAllSkuSalesReportStoreFilters();
+      const rows = buildAllSkuSalesReportRows(new Date(), currentAllSkuSalesReportStore).sort((a, b) => b.average28Days - a.average28Days || b.average7Days - a.average7Days || String(a.name).localeCompare(String(b.name), 'zh-Hans-CN'));
+      table.querySelector('thead').innerHTML = '<tr><th>中文名（SKU）</th><th>总库存</th><th>昨日销量</th><th>7日内日均销量</th><th>28日内日均销量</th></tr>';
+      table.querySelector('tbody').innerHTML = rows.length ? rows.map(row => `
+        <tr>
+          <td class="all-sku-name-cell">${formatAllSkuNameWithArticle(row)}</td>
+          <td class="all-sku-number-cell">${row.totalInventory}</td>
+          <td class="all-sku-number-cell">${row.yesterdaySales}</td>
+          <td class="all-sku-number-cell">${formatSalesAverage(row.average7Days)}</td>
+          <td class="all-sku-number-cell primary">${formatSalesAverage(row.average28Days)}</td>
+        </tr>
+      `).join('') : '<tr><td colspan="5">暂无SKU销售数据</td></tr>';
+    }
+    function renderAllSkuSalesReportStoreFilters() {
+      const filterBox = document.getElementById('allSkuSalesReportStoreFilters');
+      if (!filterBox) return;
+      const options = [
+        { value: ALL_SKU_SALES_REPORT_ALL_STORES, label: '所有数据' },
+        ...getAllSkuSalesReportStores().map(store => ({ value: store, label: store }))
+      ];
+      filterBox.innerHTML = options.map(option => `
+        <button type="button" class="all-sku-sales-report-filter-btn ${option.value === currentAllSkuSalesReportStore ? 'active' : ''}" data-store-filter="${escapeHtml(option.value)}">${escapeHtml(option.label)}</button>
+      `).join('');
+    }
+    async function syncAllSkuSalesReportData() {
+      await syncAllStoresSkusAnalytics();
+      renderAllSkuSalesReport();
+    }
+    function openAllSkuSalesReport() {
+      renderAllSkuSalesReport();
+      document.getElementById('allSkuSalesReportModal').style.display = 'flex';
+    }
     function extractSellerDailyAnalyticsRows(response) {
       const body = unwrapOzonBody(response);
       const rows = body?.result?.data || body?.data || body?.items || body?.rows || [];
@@ -2440,6 +2592,11 @@
       if (btn) {
         btn.disabled = isBusy;
         btn.textContent = isBusy ? (text || '同步中...') : '🔄 全店SKU同步';
+      }
+      const reportBtn = document.getElementById('syncAllSkuSalesReportBtn');
+      if (reportBtn) {
+        reportBtn.disabled = isBusy;
+        reportBtn.textContent = isBusy ? (text || '同步中...') : '同步所有SKU数据';
       }
       setSummarySyncBusy(isBusy);
     }
@@ -4676,6 +4833,15 @@
       renderEventPanel();
       document.getElementById('eventLogModal').style.display = 'flex';
     };
+    document.getElementById('allSkuSalesReportBtn').onclick = openAllSkuSalesReport;
+    document.getElementById('syncAllSkuSalesReportBtn').onclick = syncAllSkuSalesReportData;
+    document.getElementById('allSkuSalesReportStoreFilters').addEventListener('click', e => {
+      const btn = e.target.closest('[data-store-filter]');
+      if (!btn) return;
+      currentAllSkuSalesReportStore = btn.dataset.storeFilter || ALL_SKU_SALES_REPORT_ALL_STORES;
+      renderAllSkuSalesReport();
+    });
+    document.getElementById('closeAllSkuSalesReportBtn').onclick = () => document.getElementById('allSkuSalesReportModal').style.display = 'none';
     document.getElementById('closeEventLogBtn').onclick = () => document.getElementById('eventLogModal').style.display = 'none';
     document.querySelectorAll('.toggle-panel').forEach(b=>{ b.onclick=()=>{ const t=document.getElementById(b.dataset.target); t.style.display=t.style.display==='none'?(t.id==='shipContent'?'flex':'block'):'none'; }; });
     document.getElementById('searchBtn').onclick = searchWarehouse;
