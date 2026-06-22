@@ -141,9 +141,11 @@
     .daily-calendar-weekdays, .daily-analytics-calendar { display: grid; grid-template-columns: repeat(7, minmax(44px, 1fr)); gap: 0.25rem; }
     .daily-calendar-weekdays { margin-top: 0.6rem; color: #64748b; font-size: 0.62rem; text-align: center; font-weight: 700; }
     .daily-analytics-calendar { margin-top: 0.25rem; }
-    .daily-calendar-day { min-height: 58px; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 0.35rem 0.25rem; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.22rem; }
+    .daily-calendar-day { min-height: 58px; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 0.35rem 0.25rem; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.22rem; cursor: pointer; user-select: none; }
     .daily-calendar-day.is-outside { color: #94a3b8; background: #f8fafc; }
     .daily-calendar-day.is-today { border-color: #2563eb; box-shadow: inset 0 0 0 1px #2563eb; }
+    .daily-calendar-day.is-future { cursor: not-allowed; opacity: 0.55; }
+    .daily-calendar-day.is-syncing { border-color: #4f46e5; background: #eef2ff; cursor: wait; }
     .daily-calendar-date { font-size: 0.72rem; font-weight: 700; line-height: 1; }
     .daily-calendar-sales { font-size: 0.62rem; color: #2563eb; line-height: 1.15; min-height: 0.75rem; }
     .daily-calendar-day:not(.has-sales) .daily-calendar-sales { color: #94a3b8; }
@@ -725,6 +727,7 @@
     let monthlySummarySalesMap = {};
     let regionsData = {};
     let currentDailyAnalyticsMonth = new Date();
+    let syncingDailyAnalyticsDate = '';
     let highlightedRegion = null;
     let lastUnmappedClusters = [];
     const ALL_SKU_SALES_REPORT_ALL_STORES = '__ALL__';
@@ -2448,19 +2451,40 @@
       return syncDailyAnalyticsForDates(targetDates, storeName, article);
     }
 
+    async function syncSingleDailyAnalyticsDate(date) {
+      date = String(date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > formatDateYmd(new Date())) return;
+      if (syncingDailyAnalyticsDate) return;
+      syncingDailyAnalyticsDate = date;
+      renderDailyAnalyticsCalendar();
+      try {
+        await syncDailyAnalyticsForDates([date], currentStore, currentSKU && currentSKU.article);
+        showCopyToast(`已重新同步 ${date} 的销量`);
+      } catch (error) {
+        alert(`单日销量同步失败：${error.message || error}`);
+      } finally {
+        syncingDailyAnalyticsDate = '';
+        renderDailyAnalyticsCalendar();
+      }
+    }
+
     function renderDailyAnalyticsCalendar() {
       const cells = getCalendarMonthDates(currentDailyAnalyticsMonth);
       const bucket = ensureDailyAnalyticsBucket(currentStore, currentSKU && currentSKU.article);
+      const today = formatDateYmd(new Date());
       document.getElementById('dailyAnalyticsSkuLabel').textContent = `${currentStore || DEFAULT_STORE} / ${currentSKU.name || ''} (${currentSKU.article || ''})`;
       document.getElementById('dailyCalendarMonthLabel').textContent = `${currentDailyAnalyticsMonth.getFullYear()}年${currentDailyAnalyticsMonth.getMonth() + 1}月`;
       document.getElementById('dailyAnalyticsCalendar').innerHTML = cells.map(cell => {
         const row = bucket.dates[cell.date];
-        const salesText = row ? `${Math.round(Number(row.orderedUnits || 0))}` : '-';
+        const isSyncing = syncingDailyAnalyticsDate === cell.date;
+        const salesText = isSyncing ? '同步中' : (row ? `${Math.round(Number(row.orderedUnits || 0))}` : '-');
         const classes = ['daily-calendar-day'];
         if (!cell.inMonth) classes.push('is-outside');
         if (cell.isToday) classes.push('is-today');
+        if (cell.date > today) classes.push('is-future');
+        if (isSyncing) classes.push('is-syncing');
         if (row) classes.push('has-sales');
-        return `<div class="${classes.join(' ')}" data-date="${cell.date}"><div class="daily-calendar-date">${cell.day}</div><div class="daily-calendar-sales">${salesText}</div></div>`;
+        return `<div class="${classes.join(' ')}" data-date="${cell.date}" title="${cell.date > today ? '未来日期不能同步' : '双击重新同步当天销量'}"><div class="daily-calendar-date">${cell.day}</div><div class="daily-calendar-sales">${salesText}</div></div>`;
       }).join('');
       const rollingDates = getRollingDailyAnalyticsDates(28);
       const missing = getMissingDailyAnalyticsDates(rollingDates);
@@ -4718,6 +4742,11 @@
     document.getElementById('saveStoreApiBtn').onclick = saveStoreApiInfo;
     document.getElementById('closeStoreApiBtn').onclick = () => document.getElementById('storeApiModal').style.display = 'none';
     document.getElementById('closeDailyAnalyticsBtn').onclick = () => document.getElementById('dailyAnalyticsModal').style.display = 'none';
+    document.getElementById('dailyAnalyticsCalendar').addEventListener('dblclick', event => {
+      const dayCell = event.target.closest('.daily-calendar-day[data-date]');
+      if (!dayCell) return;
+      syncSingleDailyAnalyticsDate(dayCell.dataset.date);
+    });
     document.getElementById('syncDailyAnalyticsBtn').onclick = async () => {
       const btn = document.getElementById('syncDailyAnalyticsBtn');
       try {

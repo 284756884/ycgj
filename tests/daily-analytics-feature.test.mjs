@@ -45,6 +45,8 @@ assert.match(html, /function\s+mergeDailyAnalyticsSyncDates\s*\(/, 'daily sales 
 assert.match(html, /function\s+getRollingDailyAnalyticsDates\s*\(/, 'daily sales cache should use a rolling 28-day window');
 assert.match(html, /function\s+getDailyAnalyticsSalesTotal\s*\(/, 'daily sales cache should expose a rolling total helper');
 assert.match(html, /function\s+syncDailyAnalyticsForDates\s*\(/, 'daily sales sync should sync selected dates');
+assert.match(html, /function\s+syncSingleDailyAnalyticsDate\s*\(/, 'daily sales calendar should support re-syncing one selected date');
+assert.match(html, /dailyAnalyticsCalendar[\s\S]*addEventListener\s*\(\s*'dblclick'/, 'double-clicking a calendar date should trigger a one-day re-sync');
 assert.match(html, /dailyAnalyticsCache/, 'daily sales results should be cached');
 assert.match(html, /\/v1\/analytics\/data/, 'daily sales should use Seller analytics data');
 assert.match(html, /ordered_units/, 'daily sales should read ordered_units');
@@ -69,7 +71,9 @@ const syncStoresSource = extractFunctionSource(html, 'syncStores');
 const syncCurrentSkuAnalyticsSource = extractFunctionSource(html, 'syncCurrentSkuAnalytics');
 const applyAnalyticsSummarySource = extractFunctionSource(html, 'applyAnalyticsSummaryToSku');
 const syncDailyAnalyticsForDatesSource = extractFunctionSource(html, 'syncDailyAnalyticsForDates');
+const syncSingleDailyAnalyticsDateSource = extractFunctionSource(html, 'syncSingleDailyAnalyticsDate');
 const syncMissingDailyAnalyticsSource = extractFunctionSource(html, 'syncMissingDailyAnalytics');
+const renderDailyAnalyticsCalendarSource = extractFunctionSource(html, 'renderDailyAnalyticsCalendar');
 
 const sandbox = {
   DEFAULT_STORE: 'Default Store',
@@ -100,6 +104,11 @@ assert.match(applyAnalyticsSummarySource, /applyMonthlySalesInputValue\s*\(\s*do
 assert.match(applyAnalyticsSummarySource, /getDataKey\s*\(\s*article\s*,\s*storeName\s*\)/, 'monthly sales sync should be able to write a specific store/SKU');
 assert.match(html, /monthlySummarySalesMap/, 'monthly sales sync needs a per SKU summary value cache');
 assert.doesNotMatch(syncDailyAnalyticsForDatesSource, /requireStorePerformanceInfo|fetchPerformanceSpendMap|resolveCurrentPerformanceCampaignIds/, 'daily sales sync must only use Seller analytics data');
+assert.match(syncSingleDailyAnalyticsDateSource, /date\s*>\s*formatDateYmd\s*\(\s*new Date\s*\(\s*\)\s*\)/, 'single-day re-sync should reject future dates');
+assert.match(syncSingleDailyAnalyticsDateSource, /await\s+syncDailyAnalyticsForDates\s*\(\s*\[date\]\s*,\s*currentStore\s*,\s*currentSKU\s*&&\s*currentSKU\.article\s*\)/, 'single-day re-sync should overwrite the selected current store/SKU date');
+assert.match(syncSingleDailyAnalyticsDateSource, /renderDailyAnalyticsCalendar\s*\(\s*\)/, 'single-day re-sync should refresh the calendar');
+assert.match(syncSingleDailyAnalyticsDateSource, /finally[\s\S]*syncingDailyAnalyticsDate\s*=\s*''/, 'single-day re-sync should always clear its busy state');
+assert.match(renderDailyAnalyticsCalendarSource, /syncingDailyAnalyticsDate\s*===\s*cell\.date/, 'calendar should visually mark the date currently being synchronized');
 assert.match(syncMissingDailyAnalyticsSource, /filterSyncableDailyAnalyticsDates\s*\(/, 'syncMissingDailyAnalytics must avoid future dates rejected by date_to validation');
 assert.match(syncMissingDailyAnalyticsSource, /mergeDailyAnalyticsSyncDates\s*\(\s*dates\s*,\s*missing\s*/, 'syncMissingDailyAnalytics must also refresh the previous day so partial same-day cache is overwritten');
 assert.match(syncCurrentSkuAnalyticsSource, /const\s+rollingDates\s*=\s*getRollingDailyAnalyticsDates\s*\(\s*28\s*\)/, 'monthly sales sync should build the latest rolling 28-day window');
