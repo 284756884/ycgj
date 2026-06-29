@@ -24,6 +24,6 @@ const eventUndoSnippet = html.slice(
 
 assert.match(eventUndoSnippet, /pendingShipments\.push\s*\(/, 'event panel completed rollback should return records to current pending shipments');
 assert.doesNotMatch(eventUndoSnippet, /queueInputRestore\s*\(/, 'event panel completed rollback should not return records to input boxes');
-assert.match(eventUndoSnippet, /date:\s*\(e\.date\|\|new Date\(e\.time\)/, 'event rollback should keep the original event date');
+assert.match(eventUndoSnippet, /date:\s*\(e\.date\|\|formatDateYmd\(new Date\(e\.time\)\)\)/, 'event rollback should keep the original event date as a local date');
 
 console.log('ship history rollback returns completed shipments to pending');

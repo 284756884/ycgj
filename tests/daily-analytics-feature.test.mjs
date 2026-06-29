@@ -41,7 +41,7 @@ assert.match(html, /openDailyAnalyticsModal\s*\(/, 'clicking monthly summary sho
 
 assert.match(html, /function\s+getMissingDailyAnalyticsDates\s*\(/, 'daily sales sync should only request uncached dates');
 assert.match(html, /function\s+filterSyncableDailyAnalyticsDates\s*\(/, 'daily sales sync should filter out future dates before requesting Seller analytics');
-assert.match(html, /function\s+mergeDailyAnalyticsSyncDates\s*\(/, 'daily sales sync should merge missing dates with the previous day overwrite date');
+assert.match(html, /function\s+getDailyAnalyticsSyncDatesFromLatestMissing\s*\(/, 'daily sales sync should overwrite from two days before the latest missing date through today');
 assert.match(html, /function\s+getRollingDailyAnalyticsDates\s*\(/, 'daily sales cache should use a rolling 28-day window');
 assert.match(html, /function\s+getDailyAnalyticsSalesTotal\s*\(/, 'daily sales cache should expose a rolling total helper');
 assert.match(html, /function\s+syncDailyAnalyticsForDates\s*\(/, 'daily sales sync should sync selected dates');
@@ -110,10 +110,10 @@ assert.match(syncSingleDailyAnalyticsDateSource, /renderDailyAnalyticsCalendar\s
 assert.match(syncSingleDailyAnalyticsDateSource, /finally[\s\S]*syncingDailyAnalyticsDate\s*=\s*''/, 'single-day re-sync should always clear its busy state');
 assert.match(renderDailyAnalyticsCalendarSource, /syncingDailyAnalyticsDate\s*===\s*cell\.date/, 'calendar should visually mark the date currently being synchronized');
 assert.match(syncMissingDailyAnalyticsSource, /filterSyncableDailyAnalyticsDates\s*\(/, 'syncMissingDailyAnalytics must avoid future dates rejected by date_to validation');
-assert.match(syncMissingDailyAnalyticsSource, /mergeDailyAnalyticsSyncDates\s*\(\s*dates\s*,\s*missing\s*/, 'syncMissingDailyAnalytics must also refresh the previous day so partial same-day cache is overwritten');
+assert.match(syncMissingDailyAnalyticsSource, /getDailyAnalyticsSyncDatesFromLatestMissing\s*\(\s*dates\s*,\s*missing\s*/, 'syncMissingDailyAnalytics must refresh from two days before the latest missing date through today');
 assert.match(syncCurrentSkuAnalyticsSource, /const\s+rollingDates\s*=\s*getRollingDailyAnalyticsDates\s*\(\s*28\s*\)/, 'monthly sales sync should build the latest rolling 28-day window');
 assert.match(syncCurrentSkuAnalyticsSource, /const\s+summary\s*=\s*await\s+fetchCurrentAnalyticsStockSummary\s*\(\s*currentStore\s*\)/, 'monthly sales sync should fetch regional monthly sales');
 assert.match(syncCurrentSkuAnalyticsSource, /applyAnalyticsSummaryToCurrentSku\s*\(\s*summary\s*,\s*mode\s*\)/, 'monthly sales sync should apply regional monthly sales');
-assert.match(syncCurrentSkuAnalyticsSource, /syncMissingDailyAnalytics\s*\(\s*rollingDates\s*,/, 'monthly sales sync should only backfill missing dates in the latest rolling 28 days');
+assert.match(syncCurrentSkuAnalyticsSource, /syncMissingDailyAnalytics\s*\(\s*rollingDates\s*,/, 'monthly sales sync should refresh daily sales from the latest missing date range');
 
 console.log('daily sales calendar hooks are present');

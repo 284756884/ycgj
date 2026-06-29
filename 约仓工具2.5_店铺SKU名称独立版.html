@@ -967,11 +967,11 @@
     function formatDateOffset(baseDate, offsetDays) {
       const base = baseDate ? new Date(baseDate + 'T00:00:00') : new Date();
       base.setDate(base.getDate() + offsetDays);
-      return base.toISOString().slice(0,10);
+      return formatDateYmd(base);
     }
     function openDateChangeModal({ title, oldDate, onConfirm, enableBackendChange = false, showAvailableDates = false, singleBackendRequestNo = '' }) {
       pendingDateChangeHandler = onConfirm;
-      pendingDateBase = oldDate || new Date().toISOString().slice(0,10);
+      pendingDateBase = oldDate || todayYmd();
       pendingDateChangeOptions = {
         enableBackendChange: Boolean(enableBackendChange),
         showAvailableDates: Boolean(showAvailableDates),
@@ -1125,9 +1125,9 @@
       });
       const regions = Object.keys(map);
       regions.forEach(region => {
-        const invInp = document.getElementById('inv-'+region.replace(/\s/g,''));
+        const invInp = document.getElementById(inventoryInputId(region));
         if (invInp) invInp.value = (parseInt(invInp.value,10)||0) + map[region].qty;
-        const reqInp = document.getElementById('req-'+region.replace(/\s/g,''));
+        const reqInp = document.getElementById(requestInputId(region));
         if (reqInp && map[region].requestNos.length) {
           const existing = reqInp.value.trim();
           const merged = existing ? existing + ',' + map[region].requestNos.join(',') : map[region].requestNos.join(',');
@@ -1571,8 +1571,19 @@
     function normalizeRegionLabel(value) {
       return String(value || '').replace(/\s+/g, '').trim();
     }
+    function regionDomIdPart(region) {
+      const text = String(region || '');
+      const encoded = Array.from(text, ch => ch.codePointAt(0).toString(16)).join('-');
+      return encoded ? `r-${encoded}` : 'r-empty';
+    }
+    function inventoryInputId(region) {
+      return 'inv-' + regionDomIdPart(region);
+    }
+    function requestInputId(region) {
+      return 'req-' + regionDomIdPart(region);
+    }
     function monthlySalesInputId(region) {
-      return 'mon-' + String(region || '').replace(/\s/g, '');
+      return 'mon-' + regionDomIdPart(region);
     }
     function applyMonthlySalesInputValue(documentRef, region, value) {
       const doc = documentRef && typeof documentRef.getElementById === 'function' ? documentRef : null;
@@ -1703,7 +1714,7 @@
       for (let i = count - 1; i >= 0; i--) {
         const d = new Date(baseDate);
         d.setDate(d.getDate() - i);
-        result.push(d.toISOString().slice(0, 10));
+        result.push(formatDateYmd(d));
       }
       return result;
     }
@@ -1713,6 +1724,9 @@
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
+    }
+    function todayYmd() {
+      return formatDateYmd(new Date());
     }
     function getMonthRange(baseDate = new Date()) {
       const first = new Date(baseDate.getFullYear(), baseDate.getMonth(), 1);
@@ -1746,7 +1760,7 @@
         }
         const prev = new Date(last[last.length - 1]);
         prev.setDate(prev.getDate() + 1);
-        if (prev.toISOString().slice(0, 10) === date) last.push(date);
+        if (formatDateYmd(prev) === date) last.push(date);
         else groups.push([date]);
       });
       return groups;
@@ -1782,6 +1796,23 @@
         if ((syncableDates || []).includes(date)) dates.push(date);
       });
       return [...new Set(dates)].sort();
+    }
+    function getDailyAnalyticsSyncDatesFromLatestMissing(syncableDates, missingDates, baseDate = new Date()) {
+      const today = formatDateYmd(baseDate);
+      const scopedDates = new Set(filterSyncableDailyAnalyticsDates(syncableDates, baseDate));
+      const missing = [...new Set(missingDates || [])]
+        .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) && scopedDates.has(date))
+        .sort();
+      if (!missing.length) return [];
+      const [year, month, day] = missing[missing.length - 1].split('-').map(Number);
+      const cursor = new Date(year, month - 1, day);
+      cursor.setDate(cursor.getDate() - 2);
+      const result = [];
+      while (formatDateYmd(cursor) <= today) {
+        result.push(formatDateYmd(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return result;
     }
     function getRollingDailyAnalyticsDates(days = 28, baseDate = new Date()) {
       return filterSyncableDailyAnalyticsDates(getLastNDates(days, baseDate), baseDate);
@@ -2446,7 +2477,7 @@
     async function syncMissingDailyAnalytics(datesOrDays = getRollingDailyAnalyticsDates(28), storeName = currentStore, article = currentSKU && currentSKU.article) {
       const dates = filterSyncableDailyAnalyticsDates(Array.isArray(datesOrDays) ? datesOrDays : getLastNDates(datesOrDays));
       const missing = getMissingDailyAnalyticsDates(dates, storeName, article);
-      const targetDates = mergeDailyAnalyticsSyncDates(dates, missing);
+      const targetDates = getDailyAnalyticsSyncDatesFromLatestMissing(dates, missing);
       if (!targetDates.length) return 0;
       return syncDailyAnalyticsForDates(targetDates, storeName, article);
     }
@@ -2687,7 +2718,7 @@
       let h = '<tr><th class="sticky-leading-col">📊 仓库</th><th class="summary-col sticky-summary-col">📊 汇总</th>';
       REGION_ORDER.forEach(r => {
         const mk = markupData[r] !== undefined ? (markupData[r]*100).toFixed(1)+'%' : '0%';
-        h += `<th class="region-name-header ${highlightedRegion===r?'highlight-col':''}" data-region="${r}">${r}<span class="markup-badge" data-region="${r}">加价 ${mk}</span></th>`;
+        h += `<th class="region-name-header ${highlightedRegion===r?'highlight-col':''}" data-region="${escapeHtml(r)}">${escapeHtml(r)}<span class="markup-badge" data-region="${escapeHtml(r)}">加价 ${mk}</span></th>`;
       });
       h += '</tr>'; document.querySelector('#stockTable thead').innerHTML = h;
 
@@ -2698,7 +2729,7 @@
 
       let totalMon=0;
       let monR = '<tr><td class="sticky-leading-col">📅 月销量</td><td class="summary-col sticky-summary-col"><div class="summary-sync-wrap"><span id="totalMonCell" class="monthly-sales-value" title="点击查看每日销量日历">-</span><button class="btn-xs summary-sync-btn" id="syncMonthlySalesBtn" data-label="同步" title="同步当前SKU过去28天日均销量并乘以28">同步</button></div></td>';
-      REGION_ORDER.forEach(r => { const d=getSkuData(r,art); const mon=d.monthlySales||0; totalMon+=mon; monR+=`<td class="${highlightedRegion===r?'highlight-col':''}"><input type="number" class="monthly-input" id="mon-${r.replace(/\s/g,'')}" value="${mon}" min="0"></td>`; });
+      REGION_ORDER.forEach(r => { const d=getSkuData(r,art); const mon=d.monthlySales||0; totalMon+=mon; monR+=`<td class="${highlightedRegion===r?'highlight-col':''}"><input type="number" class="monthly-input" id="${monthlySalesInputId(r)}" data-region="${escapeHtml(r)}" value="${mon}" min="0"></td>`; });
       monR+='</tr>';
 
       let daysR = '<tr><td class="sticky-leading-col">⏳ 售完(天)</td><td class="summary-col sticky-summary-col" id="totalDaysCell">-</td>';
@@ -2712,13 +2743,13 @@
         actR+=`<td class="${highlightedRegion===r?'highlight-col':''}">
           <div style="display:flex;flex-direction:column;gap:0.2rem;align-items:center;">
             <div style="display:flex;align-items:center;gap:0.2rem;">
-              <input type="number" class="inventory-input" id="inv-${r.replace(/\s/g,'')}" value="0" min="0">
+              <input type="number" class="inventory-input" id="${inventoryInputId(r)}" data-region="${escapeHtml(r)}" value="0" min="0">
               <span class="small-text total-badge">已送:${shipped}</span>
             </div>
-            <input type="text" class="request-input" id="req-${r.replace(/\s/g,'')}" placeholder="申请号" value="">
+            <input type="text" class="request-input" id="${requestInputId(r)}" data-region="${escapeHtml(r)}" placeholder="申请号" value="">
             <div style="display:flex;gap:0.2rem;">
-              <button class="btn-sm primary update-btn" data-region="${r}">更新</button>
-              <button class="btn-sm warning single-ship" data-region="${r}">📦送仓</button>
+              <button class="btn-sm primary update-btn" data-region="${escapeHtml(r)}">更新</button>
+              <button class="btn-sm warning single-ship" data-region="${escapeHtml(r)}">📦送仓</button>
             </div>
             <span class="status-badge status-transit" style="font-size:0.55rem;">${pendCount>0?`📦${pendCount}笔待送`:'⏳待送仓'}</span>
           </div>
@@ -2751,7 +2782,7 @@
       });
       document.querySelectorAll('.monthly-input').forEach(inp => {
         inp.addEventListener('change', function() {
-          const region = REGION_ORDER.find(r => r.replace(/\s/g,'') === this.id.replace('mon-',''));
+          const region = this.dataset.region;
           if(region){ clearMonthlySummarySales(art); getSkuData(region,art).monthlySales = parseInt(this.value,10)||0; persist(); renderAll(); }
         });
       });
@@ -2764,7 +2795,7 @@
       document.querySelectorAll('.update-btn').forEach(b => {
         b.onclick = () => {
           const r = b.dataset.region;
-          const inp = document.getElementById('inv-'+r.replace(/\s/g,''));
+          const inp = document.getElementById(inventoryInputId(r));
           const val = parseInt(inp.value,10);
           if(isNaN(val)||val<0) return;
           addEvent(r, art, { time: new Date().toISOString(), type:'manual', value:val });
@@ -2775,16 +2806,16 @@
       document.querySelectorAll('.single-ship').forEach(b => {
         b.onclick = () => {
           const r = b.dataset.region;
-          const qty = parseInt(document.getElementById('inv-'+r.replace(/\s/g,'')).value);
+          const qty = parseInt(document.getElementById(inventoryInputId(r)).value);
           if (!qty || qty<=0) { alert('请输入有效数量'); return; }
-          const reqInput = document.getElementById('req-'+r.replace(/\s/g,''));
+          const reqInput = document.getElementById(requestInputId(r));
           const reqNo = reqInput ? reqInput.value.trim() : '';
-          const date = document.getElementById('batchDateShip').value || new Date().toISOString().slice(0,10);
+          const date = document.getElementById('batchDateShip').value || todayYmd();
           const duplicates = findDuplicateShipRequestRows([{ region: r, requestNo: reqNo }], art);
           if (duplicates.length) { alert(formatDuplicateShipRequestError(duplicates)); return; }
           getSkuData(r,art).pendingShipments.push({ id: Date.now(), date, qty, requestNo: reqNo });
           // 清空输入框
-          document.getElementById('inv-'+r.replace(/\s/g,'')).value = '';
+          document.getElementById(inventoryInputId(r)).value = '';
           if(reqInput) reqInput.value = '';
           persist(); renderAll();
         };
@@ -2817,7 +2848,7 @@
       const tbody = document.querySelector('#shipStatusTable tbody');
       if(!dates.length) { thead.innerHTML=''; tbody.innerHTML='<tr><td colspan="100">暂无待送仓</td></tr>'; return; }
       let headerHtml = '<tr><th class="ship-sticky-date">日期</th><th class="ship-sticky-total">合计</th>';
-      REGION_ORDER.forEach(r => headerHtml+=`<th>${r}</th>`);
+      REGION_ORDER.forEach(r => headerHtml+=`<th>${escapeHtml(r)}</th>`);
       headerHtml+='<th class="ship-sticky-actions">操作</th></tr>'; thead.innerHTML = headerHtml;
 
       let rows = '';
@@ -3023,10 +3054,10 @@
     function renderShipHistory() {
       const art = getCurrentDataKey();
       const map = {};
-      REGION_ORDER.forEach(r => { getSkuData(r,art).events.forEach(e => { if((e.type==='ship'||e.type==='batch_ship') && e.value) { const d=e.date||new Date(e.time).toISOString().slice(0,10); if(!map[d]) map[d]={}; if(!map[d][r]) map[d][r]={qty:0,requestNos:[]}; map[d][r].qty+=e.value; if(e.requestNo){ const reqs=e.requestNo.split(',').map(s=>s.trim()).filter(Boolean); reqs.forEach(req=>map[d][r].requestNos.push(req)); } } }); });
+      REGION_ORDER.forEach(r => { getSkuData(r,art).events.forEach(e => { if((e.type==='ship'||e.type==='batch_ship') && e.value) { const d=e.date||formatDateYmd(new Date(e.time)); if(!map[d]) map[d]={}; if(!map[d][r]) map[d][r]={qty:0,requestNos:[]}; map[d][r].qty+=e.value; if(e.requestNo){ const reqs=e.requestNo.split(',').map(s=>s.trim()).filter(Boolean); reqs.forEach(req=>map[d][r].requestNos.push(req)); } } }); });
       const dates = Object.keys(map).sort((a,b)=>b.localeCompare(a));
       if(!dates.length) { document.querySelector('#shipHistoryTable thead').innerHTML=''; document.querySelector('#shipHistoryTable tbody').innerHTML='<tr><td>暂无记录</td></tr>'; return; }
-      let h = '<tr><th>日期</th><th>合计</th>'; REGION_ORDER.forEach(r=>h+=`<th>${r}</th>`); h+='<th>撤回</th></tr>';
+      let h = '<tr><th>日期</th><th>合计</th>'; REGION_ORDER.forEach(r=>h+=`<th>${escapeHtml(r)}</th>`); h+='<th>撤回</th></tr>';
       document.querySelector('#shipHistoryTable thead').innerHTML = h;
       document.querySelector('#shipHistoryTable tbody').innerHTML = dates.map(date=>{
         const totalQty = Object.values(map[date]).reduce((s,i)=>s+i.qty,0);
@@ -3035,7 +3066,7 @@
         row+=`<td><button class="btn-xs danger undo-date" data-date="${date}">撤回</button></td></tr>`;
         return row;
       }).join('');
-      document.querySelectorAll('.undo-date').forEach(b=>{ b.onclick=()=>{ const date=b.dataset.date; if(!confirm(`撤回 ${date} 所有已完成送仓，并退回当前待送仓？`))return; const restoreItems=[]; REGION_ORDER.forEach(r=>{ const d=getSkuData(r,art); d.events=d.events.filter(e=>{ const ed=e.date||new Date(e.time).toISOString().slice(0,10); if((e.type==='ship'||e.type==='batch_ship')&&ed===date){ d.pendingShipments.push({ id: Date.now() + Math.random(), date: ed, qty: e.value, requestNo: e.requestNo||'' }); restoreItems.push({ region:r, qty:e.value, requestNo:e.requestNo||'' }); return false; } return true; }); }); if(!restoreItems.length){ alert('该日期没有可撤回的已完成记录'); return; } highlightedRegion=restoreItems[0].region; persist(); renderAll(); }; });
+      document.querySelectorAll('.undo-date').forEach(b=>{ b.onclick=()=>{ const date=b.dataset.date; if(!confirm(`撤回 ${date} 所有已完成送仓，并退回当前待送仓？`))return; const restoreItems=[]; REGION_ORDER.forEach(r=>{ const d=getSkuData(r,art); d.events=d.events.filter(e=>{ const ed=e.date||formatDateYmd(new Date(e.time)); if((e.type==='ship'||e.type==='batch_ship')&&ed===date){ d.pendingShipments.push({ id: Date.now() + Math.random(), date: ed, qty: e.value, requestNo: e.requestNo||'' }); restoreItems.push({ region:r, qty:e.value, requestNo:e.requestNo||'' }); return false; } return true; }); }); if(!restoreItems.length){ alert('该日期没有可撤回的已完成记录'); return; } highlightedRegion=restoreItems[0].region; persist(); renderAll(); }; });
       bindRequestCopyHandlers();
       updateTodayTotal();
     }
@@ -3048,15 +3079,15 @@
       document.querySelector('#eventTable thead').innerHTML = '<tr><th>时间</th><th>地区</th><th>类型</th><th>数量</th><th>撤回</th></tr>';
       document.querySelector('#eventTable tbody').innerHTML = all.slice(0,30).map(e=>{
         let t = e.type==='manual'?'手动更新':e.type==='ship'?'送仓完成':'批量完成';
-        return `<tr><td>${new Date(e.time).toLocaleString()}</td><td>${e.region}</td><td>${t}</td><td>${e.value}</td><td><button class="btn-xs danger undo-event" data-region="${e.region}" data-idx="${e.idx}">撤回</button></td></tr>`;
+        return `<tr><td>${new Date(e.time).toLocaleString()}</td><td>${escapeHtml(e.region)}</td><td>${t}</td><td>${e.value}</td><td><button class="btn-xs danger undo-event" data-region="${escapeHtml(e.region)}" data-idx="${e.idx}">撤回</button></td></tr>`;
       }).join('');
-      document.querySelectorAll('.undo-event').forEach(b=>{ b.onclick=()=>{ const r=b.dataset.region; const idx=parseInt(b.dataset.idx); const d=getSkuData(r,art); const e=d.events[idx]; if(!e) return; if((e.type==='ship'||e.type==='batch_ship') && e.value){ d.pendingShipments.push({ id: Date.now() + Math.random(), date: (e.date||new Date(e.time).toISOString().slice(0,10)), qty: e.value, requestNo: e.requestNo||'' }); highlightedRegion=r; } d.events.splice(idx,1); persist(); renderAll(); }; });
+      document.querySelectorAll('.undo-event').forEach(b=>{ b.onclick=()=>{ const r=b.dataset.region; const idx=parseInt(b.dataset.idx); const d=getSkuData(r,art); const e=d.events[idx]; if(!e) return; if((e.type==='ship'||e.type==='batch_ship') && e.value){ d.pendingShipments.push({ id: Date.now() + Math.random(), date: (e.date||formatDateYmd(new Date(e.time))), qty: e.value, requestNo: e.requestNo||'' }); highlightedRegion=r; } d.events.splice(idx,1); persist(); renderAll(); }; });
     }
 
     function updateTodayTotal() {
-      const today = document.getElementById('batchDateShip').value || new Date().toISOString().slice(0,10);
+      const today = document.getElementById('batchDateShip').value || todayYmd();
       let total = 0;
-      REGION_ORDER.forEach(r => { const d=getSkuData(r,getCurrentDataKey()); d.pendingShipments.forEach(ps=>{if(ps.date===today) total+=ps.qty;}); d.events.forEach(e=>{ if((e.type==='ship'||e.type==='batch_ship')&&(e.date||new Date(e.time).toISOString().slice(0,10))===today) total+=e.value; }); });
+      REGION_ORDER.forEach(r => { const d=getSkuData(r,getCurrentDataKey()); d.pendingShipments.forEach(ps=>{if(ps.date===today) total+=ps.qty;}); d.events.forEach(e=>{ if((e.type==='ship'||e.type==='batch_ship')&&(e.date||formatDateYmd(new Date(e.time)))===today) total+=e.value; }); });
       document.getElementById('todayTotalDisplay').innerText = `当日约仓: ${total}`;
     }
 
@@ -3120,11 +3151,11 @@
       document.getElementById('modalRegionName').innerText = region;
       const list = document.getElementById('modalWarehouseList');
       const whs = warehouseMap[region] || [];
-      list.innerHTML = whs.map(w => `<span class="warehouse-tag">${w} <button data-remove="${region}|${w}">✕</button></span>`).join('');
+      list.innerHTML = whs.map(w => `<span class="warehouse-tag">${escapeHtml(w)} <button data-region="${escapeHtml(region)}" data-warehouse="${escapeHtml(w)}">✕</button></span>`).join('');
       document.getElementById('newWarehouseInput').value = '';
       document.getElementById('warehouseModal').style.display = 'flex';
-      document.querySelectorAll('#modalWarehouseList button[data-remove]').forEach(b => {
-        b.onclick = () => { const [r, w] = b.dataset.remove.split('|'); warehouseMap[r] = warehouseMap[r].filter(x => x !== w); persist(); openWarehouseModal(r); };
+      document.querySelectorAll('#modalWarehouseList button[data-warehouse]').forEach(b => {
+        b.onclick = () => { const r = b.dataset.region; const w = b.dataset.warehouse; warehouseMap[r] = warehouseMap[r].filter(x => x !== w); persist(); openWarehouseModal(r); };
       });
     }
 
@@ -4007,9 +4038,9 @@
       const date = document.getElementById('batchDateShip').value; if(!date) { alert('请选择日期'); return; }
       const batchShipRows = [];
       REGION_ORDER.forEach(r => {
-        const qty = parseInt(document.getElementById('inv-'+r.replace(/\s/g,'')).value);
+        const qty = parseInt(document.getElementById(inventoryInputId(r)).value);
         if (qty > 0) {
-          const reqInput = document.getElementById('req-'+r.replace(/\s/g,''));
+          const reqInput = document.getElementById(requestInputId(r));
           const reqNo = reqInput ? reqInput.value.trim() : '';
           batchShipRows.push({ region: r, qty, requestNo: reqNo, reqInput });
         }
@@ -4018,12 +4049,12 @@
       if (duplicates.length) { alert(formatDuplicateShipRequestError(duplicates)); return; }
       batchShipRows.forEach(row => {
         getSkuData(row.region, getCurrentDataKey()).pendingShipments.push({ id: Date.now() + Math.random(), date, qty: row.qty, requestNo: row.requestNo });
-        document.getElementById('inv-'+row.region.replace(/\s/g,'')).value = '';
+        document.getElementById(inventoryInputId(row.region)).value = '';
         if(row.reqInput) row.reqInput.value = '';
       });
       persist(); renderAll();
     };
-    document.getElementById('exportDataBtn').onclick = () => { const d=localStorage.getItem(STORAGE_KEY); if(!d) return; const b=new Blob([d],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); };
+    document.getElementById('exportDataBtn').onclick = () => { const d=localStorage.getItem(STORAGE_KEY); if(!d) return; const b=new Blob([d],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`backup_${todayYmd()}.json`; a.click(); };
     document.getElementById('importDataBtn').onclick = () => { const i=document.createElement('input'); i.type='file'; i.accept='.json'; i.onchange=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{ try{ localStorage.setItem(STORAGE_KEY, ev.target.result); alert('导入成功，刷新页面'); location.reload(); }catch(ex){ alert('导入失败'); } }; r.readAsText(f); }; i.click(); };
 
     function hasMeaningfulSkuData(data) {
@@ -4842,7 +4873,7 @@
     document.querySelectorAll('.quick-date-btn').forEach(btn => {
       btn.onclick = () => {
         const input = document.getElementById('dateChangeInput');
-        if (btn.dataset.mode === 'today') input.value = new Date().toISOString().slice(0,10);
+        if (btn.dataset.mode === 'today') input.value = todayYmd();
         else input.value = formatDateOffset(pendingDateBase, parseInt(btn.dataset.offset,10)||0);
         pendingDateAvailableMonth = parseDateOnlyLocal(input.value || pendingDateBase);
         renderDateChangeAvailableCalendar();
@@ -4887,7 +4918,7 @@
       initStoreSelect();
       initSelect();
       initShipPanelHeightResize();
-      document.getElementById('batchDateShip').value = new Date().toISOString().slice(0,10);
+      document.getElementById('batchDateShip').value = todayYmd();
       renderAll();
     };
   })();

@@ -17,11 +17,17 @@ globalThis.api = {
   summarizeAnalyticsStocksByRegion,
   findRegionForOzonCluster,
   applyMonthlySalesInputValue,
+  regionDomIdPart,
+  inventoryInputId,
+  requestInputId,
+  monthlySalesInputId,
   filterRestorableInputs,
   normalizeRegionClusterMap,
   mappingTextToList,
+  getLastNDates,
   getDailyAnalyticsOverwriteDate,
-  mergeDailyAnalyticsSyncDates
+  mergeDailyAnalyticsSyncDates,
+  getDailyAnalyticsSyncDatesFromLatestMissing
 };
 `, context);
 
@@ -65,13 +71,19 @@ assert.equal(rows.unmapped.length, 1);
 const fakeDocument = {
   input: { value: "" },
   getElementById(id) {
-    return id === "mon-莫斯科、莫斯科地区及远地区" ? this.input : null;
+    return id === api.monthlySalesInputId("莫斯科、莫斯科地区及远地区") ? this.input : null;
   },
 };
 
+assert.notEqual(api.regionDomIdPart("A B"), api.regionDomIdPart("AB"));
+assert.match(api.inventoryInputId("喀山"), /^inv-r-/);
+assert.match(api.requestInputId("喀山"), /^req-r-/);
+assert.match(api.monthlySalesInputId("喀山"), /^mon-r-/);
 assert.equal(api.applyMonthlySalesInputValue(fakeDocument, "莫斯科、莫斯科地区及远地区", 1234), true);
 assert.equal(fakeDocument.input.value, "1234");
 assert.equal(api.applyMonthlySalesInputValue(fakeDocument, "喀山", 99), false);
+
+assert.equal(JSON.stringify(api.getLastNDates(1, new Date(2026, 5, 4, 1, 0, 0))), JSON.stringify(["2026-06-04"]));
 
 const restorable = api.filterRestorableInputs({
   "inv-喀山": "10",
@@ -99,5 +111,16 @@ assert.equal(JSON.stringify(api.mergeDailyAnalyticsSyncDates(
   [],
   new Date(2026, 5, 4)
 )), JSON.stringify(["2026-06-03", "2026-06-04"]));
+
+assert.equal(JSON.stringify(api.getDailyAnalyticsSyncDatesFromLatestMissing(
+  ["2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"],
+  ["2026-05-30", "2026-06-02"],
+  new Date(2026, 5, 4)
+)), JSON.stringify(["2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]));
+assert.equal(JSON.stringify(api.getDailyAnalyticsSyncDatesFromLatestMissing(
+  ["2026-06-02", "2026-06-03", "2026-06-04"],
+  [],
+  new Date(2026, 5, 4)
+)), JSON.stringify([]));
 
 console.log("analytics sync helper tests passed");
