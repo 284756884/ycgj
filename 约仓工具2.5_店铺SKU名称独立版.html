@@ -2070,7 +2070,9 @@
       const body = getUpstreamBody(value);
       const direct = typeof (body && body.result) === 'string' ? body.result : '';
       if (/^https?:\/\//i.test(direct)) return direct;
-      const url = findDeepValue(body, ['file_url', 'fileUrl', 'download_url', 'downloadUrl', 'url']);
+      const fileUrl = findDeepValue(body, ['file_url', 'fileUrl', 'download_url', 'downloadUrl']);
+      if (typeof fileUrl === 'string' && /^https?:\/\//i.test(fileUrl)) return fileUrl;
+      const url = findDeepValue(body, ['url']);
       return typeof url === 'string' && /^https?:\/\//i.test(url) ? url : '';
     }
     function compactApiResponse(value) {

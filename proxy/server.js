@@ -257,7 +257,7 @@ function normalizeDownloadUrl(value) {
     host.endsWith(".ozone.ru") ||
     host.endsWith(".ozone.com");
   if (!allowed) {
-    throw new Error("PDF URL must be an Ozon download URL.");
+    throw new Error(`PDF URL must be an Ozon download URL. Rejected host: ${host}`);
   }
   return url;
 }
