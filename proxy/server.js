@@ -252,6 +252,8 @@ function normalizeDownloadUrl(value) {
     host.endsWith(".ozonusercontent.com") ||
     host === "ozonstatic.cn" ||
     host.endsWith(".ozonstatic.cn") ||
+    host === "ozonru.cn" ||
+    host.endsWith(".ozonru.cn") ||
     host.endsWith(".ozon.ru") ||
     host.endsWith(".ozon.com") ||
     host.endsWith(".ozone.ru") ||
